@@ -13,6 +13,24 @@ struct Snap {
     items: Vec<String>
 }
 
+#[derive(Deserialize, Debug)]
+struct SnapConfig {
+    modules: HashMap<String, ModuleConfig>
+}
+
+#[derive(Deserialize, Debug)]
+struct ModuleConfig {
+    inc: Vec<String>,
+    description: Option<String>,
+    hooks: Option<Hooks>
+}
+
+#[derive(Deserialize, Debug)]
+struct Hooks {
+    pre_load: Option<String>,
+    post_load: Option<String>
+}
+
 fn get_snap_config_dir() -> String {
     let user_home_dir = std::env::var("HOME").expect("Failed to read HOME env variable");
     let snaps_config_dir = user_home_dir + "/.config/snapsr";
@@ -25,7 +43,7 @@ fn get_snaps_dir() -> String {
     snaps_dir
 }
 
-fn read_snap_config(path: String) -> Option<HashMap<String, Snap>> {
+fn read_snap_config(path: String) -> Option<SnapConfig> {
     let data = match fs::read_to_string(path) {
         Ok(txt) => txt,
         Err(_) => {
@@ -33,7 +51,7 @@ fn read_snap_config(path: String) -> Option<HashMap<String, Snap>> {
         }
     };
 
-    let snaps : HashMap<String, Snap> = match serde_json::from_str(&data) {
+    let snaps : SnapConfig = match toml::from_str(&data) {
         Ok(data) => data,
         Err(_) => {
             return None
@@ -104,7 +122,7 @@ pub fn take_snap(snap_name: String, snap_config_path: Option<String>) {
 
         None => {
             let snap = get_snap_config_dir();
-            let snap = path::Path::new(&snap).join("snaps.jsonc");
+            let snap = path::Path::new(&snap).join("config.toml");
             snap
         }
     };
@@ -133,6 +151,7 @@ pub fn take_snap(snap_name: String, snap_config_path: Option<String>) {
         return
     }
 
+    /*
     if let Err(_) = fs::copy(get_snap_config_dir() + "/snaps.jsonc", snap_dir.join("snap.jsonc")) {
         eprintln!("[\x1b[1;91m-\x1b[0m] Failed to copy snap config to snap {snap_name}");
         return
@@ -183,6 +202,7 @@ pub fn take_snap(snap_name: String, snap_config_path: Option<String>) {
 
     println!("[\x1b[1;92m+\x1b[0m] Snape {snap_name} successfully saved");
     println!("Saved {items_copied}/{total_items} items ({}kb)", total_size/100);
+    */
 }
 
 pub fn transfer_snap(snap_name: String) {
@@ -214,6 +234,7 @@ pub fn transfer_snap(snap_name: String) {
         }
     };
     
+    /*
     let mut total_items = 0;
     let mut items_transferred = 0;
     for (module_name, module) in snap {
@@ -235,6 +256,7 @@ pub fn transfer_snap(snap_name: String) {
 
     println!("[\x1b[1;92m+\x1b[0m] Transfer complete");
     println!("Transferred {items_transferred}/{total_items}");
+    */
 }
 
 pub fn delete_snap(snap: String) {
