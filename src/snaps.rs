@@ -4,10 +4,12 @@ use std::io::Write;
 use std::path;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::error::Error;
 
 use glob::glob;
 use serde::Deserialize;
 use serde::Serialize;
+use chrono::prelude::*;
 
 #[derive(Deserialize, Debug)]
 struct Snap {
@@ -33,10 +35,30 @@ struct Hooks {
     post_load: Option<String>
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Debug)]
 struct SnapMetaData {
-    items: HashMap<String, String>,
+    timestamp: DateTime<Local>,
+    size: u32,
+    items: HashMap<PathBuf, PathBuf>,
     hooks: Option<Hooks>
+}
+
+
+impl SnapMetaData {
+    fn new(items: HashMap<PathBuf, PathBuf>) -> Self {
+        return Self {
+            timestamp: chrono::Local::now(),
+            size: 0,
+            items,
+            hooks: None
+        } 
+    }
+
+    fn save(&self, path: &PathBuf) -> Result<(), Box<dyn Error>>{
+        let json_data = serde_json::to_string(self)?;
+        fs::write(path, json_data)?;
+        Ok(())
+    }
 }
 
 fn get_snap_config_dir() -> String {
@@ -183,23 +205,7 @@ pub fn take_snap(snap_name: String, snap_config_path: Option<String>) {
         return
     }
 
-    /*
-    let mut total_size: u64 = 0;
-
-    match fs::copy(get_snap_config_dir() + "/snaps.jsonc", snap_dir.join("snap.jsonc")) {
-        Ok(size) => {
-            total_size += size;
-        }
-        Err(_) => {
-            eprintln!("[\x1b[1;91m-\x1b[0m] Failed to copy snap config to snap {snap_name}");
-            return;
-        }
-    }
-    */
-
-    //let mut total_items = 0;
-    //let mut items_copied = 0;
-
+    let mut items_src_to_dst : HashMap<PathBuf, PathBuf> = HashMap::new();
     for (module_name, module) in snap.modules {
         let module_dir = snap_dir.join(&module_name);
 
@@ -214,38 +220,25 @@ pub fn take_snap(snap_name: String, snap_config_path: Option<String>) {
             let file_name = item.file_name();
             
             if let Some(file_name) = file_name {
-                match fs::copy(&item, module_dir.join(file_name)) {
-                    Ok(_) =>  println!("[\x1b[1;92m+\x1b[0m] Saved {} ({module_name})", item.display()),
-                    Err(_) => println!("[\x1b[1;91m-\x1b[0m] Failed to save {}, skipping ({module_name})", item.display()) 
+                let saved_item_path = module_dir.join(file_name);
+                
+                if let Ok(_) = fs::copy(&item, &saved_item_path) {
+                    items_src_to_dst.insert(item.clone(), saved_item_path);
+                    println!("[\x1b[1;92m+\x1b[0m] Saved {} ({module_name})", item.display());
+                }
+                else {
+                    println!("[\x1b[1;91m-\x1b[0m] Failed to save {}, skipping ({module_name})", item.display());
                 }
             }
         }
-
-
-        /*
-        for item in config.items {
-            total_items += 1;
-            let full_path = path::Path::new(&config.path).join(&item);
-
-            if let Err(_) = fs::copy(&full_path, module_dir.join(&item)) {
-                println!("[\x1b[1;91m-\x1b[0m] Failed to save {item}, skipping");
-                continue;
-            }
-            
-            let file_meta = fs::metadata(full_path);
-
-            if let Ok(meta_data) = file_meta {
-                total_size += meta_data.len(); 
-            }
-
-            println!("[\x1b[1;92m+\x1b[0m] Saved {item} ({module})");
-            items_copied += 1;
-        }
-        */
     }
-
-    //println!("[\x1b[1;92m+\x1b[0m] Snape {snap_name} successfully saved");
-    //println!("Saved {items_copied}/{total_items} items ({}kb)", total_size/100);
+    let snap_meta_data = SnapMetaData::new(items_src_to_dst);
+    if let Ok(()) = snap_meta_data.save(&snap_dir.join("snap.json")) {
+        println!("[\x1b[1;92m+\x1b[0m] Sucessfully saved Snap");
+    }
+    else {
+        println!("[\x1b[1;91m-\x1b[0m] Failed to save, this snap will be unusable");
+    }
 }
 
 pub fn transfer_snap(snap_name: String) {
