@@ -6,13 +6,13 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::error::Error;
 
-use clap::builder::OsStr;
 use glob::glob;
 use serde::Deserialize;
 use serde::Serialize;
 use chrono::prelude::*;
 
 #[derive(Deserialize, Debug)]
+#[allow(dead_code)]
 struct Snap {
     path: String,
     items: Vec<String>
@@ -24,8 +24,9 @@ struct SnapConfig {
 }
 
 #[derive(Deserialize, Debug)]
+#[allow(dead_code)]
 struct ModuleConfig {
-    inc: Vec<String>,
+    include: Vec<String>,
     description: Option<String>,
     hooks: Option<Hooks>
 }
@@ -44,6 +45,32 @@ struct SnapMetaData {
     hooks: Option<Hooks>
 }
 
+impl ModuleConfig {
+    fn get_item_paths(&self) -> Vec<PathBuf> {
+        let mut items = Vec::new();
+
+        for item in &self.include {
+            for entry in glob(&item).expect("Never should happen") {
+                match entry {
+                    Ok(path) => {
+                        let meta = fs::metadata(&path).unwrap();
+                        if meta.is_file() {
+                            items.push(path);
+                        }
+                    },
+                    Err(_) => {
+                        // NOTE TO SELF, add an error display here
+                        //println!("");
+                        continue;
+                    }
+                }
+            }
+        }
+
+        items
+    }
+}
+
 
 impl SnapMetaData {
     fn new(items: HashMap<String, PathBuf>) -> Self {
@@ -55,6 +82,7 @@ impl SnapMetaData {
         } 
     }
 
+    #[allow(dead_code)]
     fn from(path: &PathBuf) -> Result<Self, Box<dyn Error>> {
         let data = fs::read_to_string(path)?;
         let data = serde_json::from_str(&data)?;
@@ -134,32 +162,6 @@ fn get_snap_size(path: &PathBuf) -> u64 {
     size
 }
 
-// Turn this to a impl
-fn get_items_from_module(module: &ModuleConfig) -> Vec<PathBuf> {
-    let mut items = Vec::new();
-
-    for item in &module.inc {
-        for entry in glob(&item).expect("Never should happen") {
-            match entry {
-                Ok(path) => {
-                    let meta = fs::metadata(&path).unwrap();
-                    if meta.is_file() {
-                        items.push(path);
-                    }
-                },
-                Err(_) => {
-                    // NOTE TO SELF, add an error display here
-                    //println!("");
-                    continue;
-                }
-            }
-        }
-    }
-
-    items
-}
-
-
 pub fn take_snap(snap_name: String, snap_config_path: Option<String>) {
     let saved_snaps = get_all_snaps();
 
@@ -224,7 +226,7 @@ pub fn take_snap(snap_name: String, snap_config_path: Option<String>) {
             continue;
         }
 
-        let items = get_items_from_module(&module);
+        let items = module.get_item_paths();
 
         for item in items {
 
@@ -278,13 +280,15 @@ pub fn transfer_snap(snap_name: String) {
         }
     };
 
-    let snap = match read_snap_config(snap_config_path.to_string()) {
+    let _snap = match read_snap_config(snap_config_path.to_string()) {
         Some(data) => data,
         None => {
             println!("[\x1b[1;91-\x1b[0m] Failed to read snap {snap_name} config");
             return;
         }
     };
+ 
+
     
     /*
     let mut total_items = 0;
