@@ -6,6 +6,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::error::Error;
 
+use clap::builder::OsStr;
 use glob::glob;
 use serde::Deserialize;
 use serde::Serialize;
@@ -39,19 +40,25 @@ struct Hooks {
 struct SnapMetaData {
     timestamp: DateTime<Local>,
     size: u32,
-    items: HashMap<PathBuf, PathBuf>,
+    items: HashMap<String, PathBuf>,
     hooks: Option<Hooks>
 }
 
 
 impl SnapMetaData {
-    fn new(items: HashMap<PathBuf, PathBuf>) -> Self {
+    fn new(items: HashMap<String, PathBuf>) -> Self {
         return Self {
             timestamp: chrono::Local::now(),
             size: 0,
             items,
             hooks: None
         } 
+    }
+
+    fn from(path: &PathBuf) -> Result<Self, Box<dyn Error>> {
+        let data = fs::read_to_string(path)?;
+        let data = serde_json::from_str(&data)?;
+        Ok(data)
     }
 
     fn save(&self, path: &PathBuf) -> Result<(), Box<dyn Error>>{
@@ -127,6 +134,7 @@ fn get_snap_size(path: &PathBuf) -> u64 {
     size
 }
 
+// Turn this to a impl
 fn get_items_from_module(module: &ModuleConfig) -> Vec<PathBuf> {
     let mut items = Vec::new();
 
@@ -150,6 +158,7 @@ fn get_items_from_module(module: &ModuleConfig) -> Vec<PathBuf> {
 
     items
 }
+
 
 pub fn take_snap(snap_name: String, snap_config_path: Option<String>) {
     let saved_snaps = get_all_snaps();
@@ -205,8 +214,9 @@ pub fn take_snap(snap_name: String, snap_config_path: Option<String>) {
         return
     }
 
-    let mut items_src_to_dst : HashMap<PathBuf, PathBuf> = HashMap::new();
-    for (module_name, module) in snap.modules {
+    let mut items_src_to_dst : HashMap<String, PathBuf> = HashMap::new();
+
+    for (module_name, module) in &snap.modules {
         let module_dir = snap_dir.join(&module_name);
 
         if let Err(_) = fs::create_dir_all(&module_dir) {
@@ -217,21 +227,27 @@ pub fn take_snap(snap_name: String, snap_config_path: Option<String>) {
         let items = get_items_from_module(&module);
 
         for item in items {
-            let file_name = item.file_name();
-            
-            if let Some(file_name) = file_name {
-                let saved_item_path = module_dir.join(file_name);
-                
-                if let Ok(_) = fs::copy(&item, &saved_item_path) {
-                    items_src_to_dst.insert(item.clone(), saved_item_path);
-                    println!("[\x1b[1;92m+\x1b[0m] Saved {} ({module_name})", item.display());
-                }
-                else {
-                    println!("[\x1b[1;91m-\x1b[0m] Failed to save {}, skipping ({module_name})", item.display());
-                }
+
+            if let (Some(parent), Some(file_child)) = (item.parent(), item.file_name()) {
+                if let Some(grandparent) = parent.file_name() {
+                    let grandparent_key = grandparent.to_string_lossy();
+                    let file_child_key = file_child.to_string_lossy();
+
+                    let file_key = grandparent_key.to_string() + "_" + &file_child_key;
+                    let saved_item_path = module_dir.join(file_key);
+
+                    if let Ok(_) = fs::copy(&item, &saved_item_path) {
+                        items_src_to_dst.insert(item.to_string_lossy().to_string(), saved_item_path);
+                        println!("[\x1b[1;92m+\x1b[0m] Saved {} ({module_name})", item.display());
+                    }
+                    else {
+                        println!("[\x1b[1;91m-\x1b[0m] Failed to save {}, skipping ({module_name})", item.display());
+                    }
+                } 
             }
         }
     }
+
     let snap_meta_data = SnapMetaData::new(items_src_to_dst);
     if let Ok(()) = snap_meta_data.save(&snap_dir.join("snap.json")) {
         println!("[\x1b[1;92m+\x1b[0m] Sucessfully saved Snap");
@@ -252,7 +268,7 @@ pub fn transfer_snap(snap_name: String) {
     let snap_dir = get_snaps_dir();
     let snap_dir = path::Path::new(&snap_dir).join(&snap_name);
 
-    let snap_config_path = path::Path::new(&snap_dir).join("snap.jsonc");
+    let snap_config_path = path::Path::new(&snap_dir).join("snap.json");
     
     let snap_config_path = match snap_config_path.to_str() {
         Some(txt) => txt,
