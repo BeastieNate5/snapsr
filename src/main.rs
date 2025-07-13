@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use clap::{Parser, Args};
 
 #[derive(Parser)]
@@ -8,7 +10,7 @@ struct Cli {
     args: Arg,
 
     #[arg(short, long, value_name="SNAP_FILE", help="Sets what Snap config file to use")]
-    file: Option<String>
+    file: Option<PathBuf>
 }
 
 #[derive(Args)]

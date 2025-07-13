@@ -45,6 +45,21 @@ struct SnapMetaData {
     hooks: Option<Hooks>
 }
 
+impl SnapConfig {
+    fn from(path: PathBuf) -> Option<Self> {
+        match fs::read_to_string(path) {
+            Ok(txt) => {
+                match toml::from_str(&txt) {
+                    Ok(config) => Some(config),
+                    Err(_) => None
+                }
+            }
+
+            Err(_) => None
+        }
+    }
+}
+
 impl ModuleConfig {
     fn get_item_paths(&self) -> Vec<PathBuf> {
         let mut items = Vec::new();
@@ -108,24 +123,6 @@ fn get_snaps_dir() -> String {
     snaps_dir
 }
 
-fn read_snap_config(path: String) -> Option<SnapConfig> {
-    let data = match fs::read_to_string(path) {
-        Ok(txt) => txt,
-        Err(_) => {
-            return None;
-        }
-    };
-
-    let snaps : SnapConfig = match toml::from_str(&data) {
-        Ok(data) => data,
-        Err(_) => {
-            return None
-        }
-    };
-
-    Some(snaps)
-}
-
 fn get_all_snaps() -> Vec<String> {
     let snaps_dir = get_snaps_dir();
     let snaps_dir = path::Path::new(&snaps_dir);
@@ -158,11 +155,10 @@ fn get_snap_size(path: &PathBuf) -> u64 {
             //println!("{:?} -> {}", path, file.len());
         }        
     }
-    
     size
 }
 
-pub fn take_snap(snap_name: String, snap_config_path: Option<String>) {
+pub fn take_snap(snap_name: String, snap_config_path: Option<PathBuf>) {
     let saved_snaps = get_all_snaps();
 
     if saved_snaps.contains(&snap_name) {
@@ -181,32 +177,25 @@ pub fn take_snap(snap_name: String, snap_config_path: Option<String>) {
 
     let snap = match snap_config_path {
         Some(path) => {
-            let snap = path::PathBuf::from(&path);
-            snap
+            let path = path::PathBuf::from(&path);
+            SnapConfig::from(path)
         },
 
         None => {
-            let snap = get_snap_config_dir();
-            let snap = path::Path::new(&snap).join("config.toml");
-            snap
-        }
-    };
-    
-    let snap = match snap.to_str() {
-        Some(txt) => txt,
-        None => {
-            println!("[\x1b[1;91m-\x1b[0m] Failed to read Snaps config directory");
-            return
+            let path = get_snap_config_dir();
+            let path = path::Path::new(&path).join("config.toml");
+            SnapConfig::from(path)
         }
     };
 
-    let snap = match read_snap_config(snap.to_string()) {
-        Some(data) => data,
+    let snap = match snap {
+        Some(config) => config,
         None => {
-            println!("[\x1b[1;91m-\x1b[0m] Failed to read snap config");
-            return;
+            eprintln!("[\x1b[1;91m-\x1b[0m] Failed to create snap config");
+            return
         }
     };
+    
 
     let snap_dir = get_snaps_dir();
     let snap_dir = path::Path::new(&snap_dir).join(&snap_name);
@@ -280,6 +269,7 @@ pub fn transfer_snap(snap_name: String) {
         }
     };
 
+    /*
     let _snap = match read_snap_config(snap_config_path.to_string()) {
         Some(data) => data,
         None => {
@@ -287,6 +277,7 @@ pub fn transfer_snap(snap_name: String) {
             return;
         }
     };
+    */
  
 
     
