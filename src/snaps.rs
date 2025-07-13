@@ -41,7 +41,7 @@ struct Hooks {
 struct SnapMetaData {
     timestamp: DateTime<Local>,
     size: u32,
-    items: HashMap<String, PathBuf>,
+    items: HashMap<PathBuf, PathBuf>,
     hooks: Option<Hooks>
 }
 
@@ -88,7 +88,7 @@ impl ModuleConfig {
 
 
 impl SnapMetaData {
-    fn new(items: HashMap<String, PathBuf>) -> Self {
+    fn new(items: HashMap<PathBuf, PathBuf>) -> Self {
         return Self {
             timestamp: chrono::Local::now(),
             size: 0,
@@ -98,10 +98,10 @@ impl SnapMetaData {
     }
 
     #[allow(dead_code)]
-    fn from(path: &PathBuf) -> Result<Self, Box<dyn Error>> {
-        let data = fs::read_to_string(path)?;
-        let data = serde_json::from_str(&data)?;
-        Ok(data)
+    fn from(path: &PathBuf) -> Option<Self> {
+        let data = fs::read_to_string(path).ok()?;
+        let data = serde_json::from_str(&data).ok()?;
+        Some(data)
     }
 
     fn save(&self, path: &PathBuf) -> Result<(), Box<dyn Error>>{
@@ -205,7 +205,7 @@ pub fn take_snap(snap_name: String, snap_config_path: Option<PathBuf>) {
         return
     }
 
-    let mut items_src_to_dst : HashMap<String, PathBuf> = HashMap::new();
+    let mut items_src_to_dst : HashMap<PathBuf, PathBuf> = HashMap::new();
 
     for (module_name, module) in &snap.modules {
         let module_dir = snap_dir.join(&module_name);
@@ -228,8 +228,8 @@ pub fn take_snap(snap_name: String, snap_config_path: Option<PathBuf>) {
                     let saved_item_path = module_dir.join(file_key);
 
                     if let Ok(_) = fs::copy(&item, &saved_item_path) {
-                        items_src_to_dst.insert(item.to_string_lossy().to_string(), saved_item_path);
                         println!("[\x1b[1;92m+\x1b[0m] Saved {} ({module_name})", item.display());
+                        items_src_to_dst.insert(item, saved_item_path);
                     }
                     else {
                         println!("[\x1b[1;91m-\x1b[0m] Failed to save {}, skipping ({module_name})", item.display());
@@ -258,52 +258,34 @@ pub fn transfer_snap(snap_name: String) {
 
     let snap_dir = get_snaps_dir();
     let snap_dir = path::Path::new(&snap_dir).join(&snap_name);
-
     let snap_config_path = path::Path::new(&snap_dir).join("snap.json");
+
+    let snap = SnapMetaData::from(&snap_config_path);
+
+    let mut failed = 0;
+    let mut total = 0;
     
-    let snap_config_path = match snap_config_path.to_str() {
-        Some(txt) => txt,
+    match snap {
+        Some(snap_meta) => {
+            for (src_item, dst_item) in snap_meta.items {
+                total += 1;
+                if let Err(_) = fs::copy(&dst_item, &src_item) {
+                    println!("[\x1b[1;91m-\x1b[0m] Failed to transfer item {}", dst_item.display());
+                    failed += 1;
+                    continue;
+                }
+                println!("[\x1b[1;92m+\x1b[0m] Transferred {}", dst_item.display());
+            } 
+        },
+
         None => {
-            eprintln!("[\x1b[1;91m-\x1b[0m] Failed to read snap {snap_name} config");
-            return;
+            eprintln!("[\x1b[1;91m-\x1b[0m] Failed to read {snap_name}'s metadata");
+            return
         }
     };
-
-    /*
-    let _snap = match read_snap_config(snap_config_path.to_string()) {
-        Some(data) => data,
-        None => {
-            println!("[\x1b[1;91-\x1b[0m] Failed to read snap {snap_name} config");
-            return;
-        }
-    };
-    */
- 
-
-    
-    /*
-    let mut total_items = 0;
-    let mut items_transferred = 0;
-    for (module_name, module) in snap {
-        
-        for item in module.items {
-            total_items += 1;
-            let dst_path = path::Path::new(&module.path).join(&item);
-            let src_path = path::Path::new(&snap_dir).join(&module_name).join(&item);
-            
-            if let Err(_) = fs::copy(src_path, dst_path) {
-                println!("[\x1b[1;91m-\x1b[0m] Failed to transfer item {item} from module {module_name}");
-                continue;
-            }
-
-            println!("[\x1b[1;92m+\x1b[0m] Transferred {item} ({module_name})");
-            items_transferred += 1;
-        }
-    }
 
     println!("[\x1b[1;92m+\x1b[0m] Transfer complete");
-    println!("Transferred {items_transferred}/{total_items}");
-    */
+    println!("Transferred {}/{total}", total-failed);
 }
 
 pub fn delete_snap(snap: String) {
