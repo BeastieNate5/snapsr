@@ -211,27 +211,6 @@ fn get_all_snaps() -> Vec<String> {
     snaps
 }
 
-fn get_snap_size(path: &PathBuf) -> u64 {
-
-    let entries = path.read_dir().expect("Error reading Snap directory");
-    let mut size : u64 = 0;
-
-    for entry in entries {
-        if let Ok(entry_data) = entry {
-            let path = entry_data.path();
-            if path.is_dir() {
-                size += get_snap_size(&path);
-                continue;
-            }
-
-            let file = fs::metadata(&path).expect("???");        
-            size += file.len();
-            //println!("{:?} -> {}", path, file.len());
-        }        
-    }
-    size
-}
-
 pub fn take_snap(snap_name: String, snap_config_path: Option<PathBuf>) {
     let saved_snaps = get_all_snaps();
 
@@ -411,8 +390,9 @@ pub fn list_snaps() {
     let snaps_dir = get_snaps_dir();
 
     for snap in snaps {
-        let snap_dir = Path::new(&snaps_dir).join(&snap);
-        let snap_size = get_snap_size(&snap_dir);
-        println!("{snap}: {}kb", snap_size/100);
+        let snap_dir = Path::new(&snaps_dir).join(&snap).join("snap.json");
+        if let Some(snap_meta) = SnapMetaData::from(&snap_dir) {
+            println!("{snap}: {}kb", snap_meta.size/100);
+        }
     }
 }
