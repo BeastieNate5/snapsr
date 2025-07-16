@@ -5,22 +5,29 @@ use std::path;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::error::Error;
+use std::process::Command;
+use std::process::Stdio;
 
 use glob::glob;
 use serde::Deserialize;
 use serde::Serialize;
 use chrono::prelude::*;
 
-#[derive(Deserialize, Debug)]
-#[allow(dead_code)]
-struct Snap {
-    path: String,
-    items: Vec<String>
+enum HookStatus {
+    Success,
+    Error,
+    Nothing
+}
+
+enum HookType {
+    Pre,
+    Post
 }
 
 #[derive(Deserialize, Debug)]
 struct SnapConfig {
-    modules: HashMap<String, ModuleConfig>
+    modules: HashMap<String, ModuleConfig>,
+    hooks: Option<Hooks>
 }
 
 #[derive(Deserialize, Debug)]
@@ -28,7 +35,6 @@ struct SnapConfig {
 struct ModuleConfig {
     include: Vec<String>,
     description: Option<String>,
-    hooks: Option<Hooks>
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -40,7 +46,7 @@ struct Hooks {
 #[derive(Serialize, Deserialize, Debug)]
 struct SnapMetaData {
     timestamp: DateTime<Local>,
-    size: u32,
+    size: u64,
     items: HashMap<PathBuf, PathBuf>,
     hooks: Option<Hooks>
 }
@@ -88,16 +94,15 @@ impl ModuleConfig {
 
 
 impl SnapMetaData {
-    fn new(items: HashMap<PathBuf, PathBuf>) -> Self {
+    fn new(items: HashMap<PathBuf, PathBuf>, hooks: Option<Hooks>, size: u64) -> Self {
         return Self {
             timestamp: chrono::Local::now(),
-            size: 0,
+            size,
             items,
-            hooks: None
+            hooks
         } 
     }
 
-    #[allow(dead_code)]
     fn from(path: &PathBuf) -> Option<Self> {
         let data = fs::read_to_string(path).ok()?;
         let data = serde_json::from_str(&data).ok()?;
@@ -108,6 +113,75 @@ impl SnapMetaData {
         let json_data = serde_json::to_string(self)?;
         fs::write(path, json_data)?;
         Ok(())
+    }
+
+    fn run_hook(&self, hook_type: HookType) -> HookStatus {
+        if let Some(ref hooks) = self.hooks {
+
+            let selected_hook = match hook_type {
+                HookType::Pre => &hooks.pre_load,
+                HookType::Post => &hooks.post_load
+            };
+
+            if let Some(post_hook) = selected_hook {
+                let mut command_splitted = post_hook.split_whitespace(); 
+                let program = command_splitted.next();
+                let _args: Vec<&str> = command_splitted.collect();
+
+                if let Some(_program_txt) = program {
+                    let mut child = Command::new("sh")
+                        .arg("-c")
+                        .arg(post_hook)
+                        .stdout(Stdio::null())
+                        .spawn();
+
+                    if let Ok(ref mut child) = child {
+
+                        let status = child.wait();
+                        
+                        if let Ok(status) = status {
+
+                            if status.success() {
+                                return HookStatus::Success
+                            }
+                            else {
+                                return HookStatus::Error
+                            }
+                        }
+                    }
+                    else {
+                        return HookStatus::Error
+                    }
+                }
+            }
+        }
+        HookStatus::Nothing
+    }
+
+    fn hook_exist(&self, hook_type: HookType) -> bool {
+        match self.hooks {
+            Some(ref hooks) => {
+                match hook_type {
+                    HookType::Pre => {
+                        if let Some(_) = hooks.pre_load {
+                            true
+                        }
+                        else {
+                            false
+                        }
+                    },
+                    HookType::Post => {
+                        if let Some(_) = hooks.post_load {
+                            true
+                        }
+                        else {
+                            false
+                        }
+                    }
+                }
+            },
+            None => false
+        }
     }
 }
 
@@ -206,6 +280,7 @@ pub fn take_snap(snap_name: String, snap_config_path: Option<PathBuf>) {
     }
 
     let mut items_src_to_dst : HashMap<PathBuf, PathBuf> = HashMap::new();
+    let mut size_of_snap = 0;
 
     for (module_name, module) in &snap.modules {
         let module_dir = snap_dir.join(&module_name);
@@ -227,9 +302,10 @@ pub fn take_snap(snap_name: String, snap_config_path: Option<PathBuf>) {
                     let file_key = grandparent_key.to_string() + "_" + &file_child_key;
                     let saved_item_path = module_dir.join(file_key);
 
-                    if let Ok(_) = fs::copy(&item, &saved_item_path) {
+                    if let Ok(size) = fs::copy(&item, &saved_item_path) {
                         println!("[\x1b[1;92m+\x1b[0m] Saved {} ({module_name})", item.display());
                         items_src_to_dst.insert(item, saved_item_path);
+                        size_of_snap += size;
                     }
                     else {
                         println!("[\x1b[1;91m-\x1b[0m] Failed to save {}, skipping ({module_name})", item.display());
@@ -239,7 +315,7 @@ pub fn take_snap(snap_name: String, snap_config_path: Option<PathBuf>) {
         }
     }
 
-    let snap_meta_data = SnapMetaData::new(items_src_to_dst);
+    let snap_meta_data = SnapMetaData::new(items_src_to_dst, snap.hooks, size_of_snap);
     if let Ok(()) = snap_meta_data.save(&snap_dir.join("snap.json")) {
         println!("[\x1b[1;92m+\x1b[0m] Sucessfully saved Snap");
     }
@@ -266,8 +342,19 @@ pub fn transfer_snap(snap_name: String) {
     let mut total = 0;
     
     match snap {
-        Some(snap_meta) => {
-            for (src_item, dst_item) in snap_meta.items {
+        Some(ref snap_meta) => {
+
+            if snap_meta.hook_exist(HookType::Pre) {
+                println!("[\x1b[1;92m+\x1b[0m] Executing pre hook");
+                let status = snap_meta.run_hook(HookType::Pre);
+                match status {
+                    HookStatus::Success => println!("[\x1b[1;92m+\x1b[0m] Pre hook executed successfully"),
+                    HookStatus::Error => println!("[\x1b[1;91m-\x1b[0m] Pre hook failed to execute"),
+                    HookStatus::Nothing => println!("[\x1b[1;91m-\x1b[0m] Pre hook is empty")
+                }
+            }
+
+            for (src_item, dst_item) in &snap_meta.items {
                 total += 1;
                 if let Err(_) = fs::copy(&dst_item, &src_item) {
                     println!("[\x1b[1;91m-\x1b[0m] Failed to transfer item {}", dst_item.display());
@@ -276,6 +363,17 @@ pub fn transfer_snap(snap_name: String) {
                 }
                 println!("[\x1b[1;92m+\x1b[0m] Transferred {}", dst_item.display());
             } 
+
+            if snap_meta.hook_exist(HookType::Post) {
+                println!("[\x1b[1;92m+\x1b[0m] Executing post hook");
+                let status = snap_meta.run_hook(HookType::Post);
+
+                match status {
+                    HookStatus::Success => println!("[\x1b[1;92m+\x1b[0m] Post hook executed successfully"),
+                    HookStatus::Error => println!("[\x1b[1;91m-\x1b[0m] Post hook failed to execute"),
+                    HookStatus::Nothing => println!("[\x1b[1;91m-\x1b[0m] Post hook is empty")
+                }
+            }
         },
 
         None => {
@@ -283,6 +381,7 @@ pub fn transfer_snap(snap_name: String) {
             return
         }
     };
+
 
     println!("[\x1b[1;92m+\x1b[0m] Transfer complete");
     println!("Transferred {}/{total}", total-failed);
