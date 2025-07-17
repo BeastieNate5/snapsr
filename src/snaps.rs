@@ -51,6 +51,12 @@ struct SnapMetaData {
     hooks: Option<Hooks>
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+struct SnapLog {
+    #[serde(default)]
+    snaps: HashMap<String, PathBuf>
+}
+
 impl SnapConfig {
     fn from(path: PathBuf) -> Option<Self> {
         match fs::read_to_string(path) {
@@ -185,6 +191,44 @@ impl SnapMetaData {
     }
 }
 
+impl SnapLog {
+    fn fetch() -> Option<Self> {
+        let snap_config_dir = get_snap_config_dir();
+        let snap_config_path = PathBuf::from(snap_config_dir).join("snaplog.json");
+        if let Ok(file_txt) = fs::read_to_string(snap_config_path) {
+            if let Ok(log) = serde_json::from_str(&file_txt) {
+                log
+            }
+            else {
+                None
+            }
+        }
+        else {
+            None
+        }
+    }
+
+    fn save(&self) -> Result<(), ()> {
+        let snap_config_dir = get_snap_config_dir();
+        let snap_config_path = PathBuf::from(snap_config_dir).join("snaplog.json");
+        match serde_json::to_string(self) {
+            Ok(json_txt) => {
+                match fs::write(snap_config_path, json_txt) {
+                    Ok(_) => Ok(()),
+                    Err(_) => Err(())
+                }
+            },
+            Err(_) => {
+                Err(())
+            }
+        }
+    }
+
+    fn exist(&self, snap_name: &str) -> bool {
+        self.snaps.contains_key(snap_name)
+    }
+}
+
 fn get_snap_config_dir() -> String {
     let user_home_dir = std::env::var("HOME").expect("Failed to read HOME env variable");
     let snaps_config_dir = user_home_dir + "/.config/snapsr";
@@ -212,18 +256,25 @@ fn get_all_snaps() -> Vec<String> {
 }
 
 pub fn take_snap(snap_name: String, snap_config_path: Option<PathBuf>) {
-    let saved_snaps = get_all_snaps();
+    //let saved_snaps = get_all_snaps();
+    match SnapLog::fetch() {
+        Some(snaplog) => {
+            if snaplog.exist(snap_name.as_str()) {
+                let mut input = String::new();
+                print!("Snap {snap_name} already exist. Do you wish to overwrite (y/N)? ");
+                io::stdout().flush().unwrap();
+                io::stdin().read_line(&mut input).unwrap();
+                let input = input.trim();
+                let input = input.to_lowercase();
 
-    if saved_snaps.contains(&snap_name) {
-        let mut input = String::new();
-        print!("Snap {snap_name} already exist. Do you wish to overwrite (y/N)? ");
-
-        io::stdout().flush().unwrap();
-        io::stdin().read_line(&mut input).unwrap();
-        let input = input.trim();
-        let input = input.to_lowercase();
-
-        if input != "y" && input != "yes" {
+                if input != "y" && input != "yes" {
+                    println!("[\x1b[1;92m+\x1b[0m] aborting");
+                    return;
+                }
+            }
+        },
+        None => {
+            println!("[\x1b[1;91m-\x1b[0m] Failed to read snap log");
             return;
         }
     }
@@ -295,20 +346,37 @@ pub fn take_snap(snap_name: String, snap_config_path: Option<PathBuf>) {
     }
 
     let snap_meta_data = SnapMetaData::new(items_src_to_dst, snap.hooks, size_of_snap);
-    if let Ok(()) = snap_meta_data.save(&snap_dir.join("snap.json")) {
-        println!("[\x1b[1;92m+\x1b[0m] Sucessfully saved Snap");
+    if let Ok(_) = snap_meta_data.save(&snap_dir.join("snap.json")) {
+        if let Some(mut snaplog) = SnapLog::fetch() {
+            snaplog.snaps.insert(snap_name, snap_dir);
+            if let Ok(_) = snaplog.save() {
+                println!("[\x1b[1;92m+\x1b[0m] Sucessfully saved Snap");
+            }
+            else {
+                println!("[\x1b[1;91m-\x1b[0m] Failed to save snap log, this snap will be unusable");
+            }
+        }
+        else {
+            println!("[\x1b[1;91m-\x1b[0m] Failed to read snap log, this snap will be unusable");
+        }
     }
     else {
-        println!("[\x1b[1;91m-\x1b[0m] Failed to save, this snap will be unusable");
+        println!("[\x1b[1;91m-\x1b[0m] Failed to save snap meta data, this snap will be unusable");
     }
 }
 
 pub fn transfer_snap(snap_name: String) {
-    let snaps = get_all_snaps();
-
-    if !snaps.contains(&snap_name) {
-        println!("[\x1b[1;91m-\x1b[0m] Snap {snap_name} does not exist");
-        return;
+    match SnapLog::fetch() {
+        Some(snaplog) => {
+            if !snaplog.exist(snap_name.as_str()) {
+                println!("[\x1b[1;91m-\x1b[0m] Snap {snap_name} does not exist");
+                return;
+            }
+        },
+        None => {
+            println!("[\x1b[1;91m-\x1b[0m] Failed to read snap log");
+            return
+        }
     }
 
     let snap_dir = get_snaps_dir();
@@ -367,32 +435,42 @@ pub fn transfer_snap(snap_name: String) {
 }
 
 pub fn delete_snap(snap: String) {
-    let snaps = get_all_snaps();
+    if let Some(ref mut snaplog) = SnapLog::fetch() {
+        if !snaplog.exist(snap.as_str()) {
+            eprintln!("[\x1b[1;91m-\x1b[0m] Snap {snap} does not exist");
+            return
+        }
 
-    if !snaps.contains(&snap) {
-        println!("[\x1b[1;91m-\x1b[0m] Snap {snap} does not exist");
-        return;
+        if let Some(snap_dir) = snaplog.snaps.remove(&snap) {
+            if let Ok(_) = fs::remove_dir_all(snap_dir) {
+                println!("[\x1b[1;92m+\x1b[0m] Deleted {snap} snap");
+            }
+            else {
+                eprintln!("[\x1b[1;91m-\x1b[0m] Failed to remove snap directory");
+            }
+        }
+        else {
+            eprintln!("[\x1b[1;91m-\x1b[0m] Failed to remove snap from snap log");
+        }
     }
 
-    let snap_dir = get_snaps_dir();
-    let snap_dir = path::Path::new(&snap_dir).join(&snap);
-
-    if let Err(_) = fs::remove_dir_all(snap_dir) {
-        eprintln!("[\x1b[1;91m-\x1b[0m] Failed to delete snap");
-        return;
+    else {
+        eprintln!("[\x1b[1;91m-\x1b[0m] Failed to read snap log")
     }
-
-    println!("[\x1b[1;92m+\x1b[0m] Deleted {snap} snap");
 }
 
 pub fn list_snaps() {
-    let snaps = get_all_snaps();
-    let snaps_dir = get_snaps_dir();
-
-    for snap in snaps {
-        let snap_dir = Path::new(&snaps_dir).join(&snap).join("snap.json");
-        if let Some(snap_meta) = SnapMetaData::from(&snap_dir) {
-            println!("{snap}: {}kb", snap_meta.size/100);
-        }
+    match SnapLog::fetch() {
+        Some(snaplog) => {
+            for (snap, snap_dir) in &snaplog.snaps {
+                match SnapMetaData::from(&snap_dir.join("snap.json")) {
+                    Some(snap_meta) => {
+                        println!("{snap}: {}kb", snap_meta.size/100);
+                    },
+                    None => {}
+                }
+            }
+        },
+        None => println!("[\x1b[1;91m-\x1b[0m] Failed to read snap log")
     }
 }
