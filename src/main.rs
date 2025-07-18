@@ -26,7 +26,10 @@ struct Arg {
     delete: Option<String>,
 
     #[arg(short, long, help="Displays all saved Snaps")]
-    list: bool
+    list: bool,
+
+    #[arg(short, long, help="Cleans out unuseable snaps")]
+    clean: bool
 }
 
 mod snaps;
@@ -45,5 +48,8 @@ fn main() {
     }
     else if cli.args.list {
         snaps::list_snaps();
+    }
+    else if cli.args.clean {
+        snaps::clean_snaps();
     }
 }

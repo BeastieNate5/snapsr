@@ -3,7 +3,7 @@ use std::fs;
 use std::io::Write;
 use std::path;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::error::Error;
 use std::process::Command;
 use std::process::Stdio;
@@ -241,20 +241,6 @@ fn get_snaps_dir() -> String {
     snaps_dir
 }
 
-fn get_all_snaps() -> Vec<String> {
-    let snaps_dir = get_snaps_dir();
-    let snaps_dir = path::Path::new(&snaps_dir);
-    let mut snaps : Vec<String> = Vec::new();
-
-    for entry in snaps_dir.read_dir().expect("Could not find snaps dir") {
-        if let Ok(name) = entry {
-            snaps.push( name.file_name().into_string().unwrap() );
-        }
-    }
-
-    snaps
-}
-
 pub fn take_snap(snap_name: String, snap_config_path: Option<PathBuf>) {
     //let saved_snaps = get_all_snaps();
     match SnapLog::fetch() {
@@ -473,4 +459,56 @@ pub fn list_snaps() {
         },
         None => println!("[\x1b[1;91m-\x1b[0m] Failed to read snap log")
     }
+}
+
+pub fn clean_snaps() {
+    let mut amount: u8 = 0;
+    let snaps_dir = get_snaps_dir();
+    match SnapLog::fetch() {
+
+        Some(snap_log) => {
+            match fs::read_dir(snaps_dir) {
+                Ok(dir_iter) => {
+
+                    for entry_result in dir_iter {
+                        match entry_result {
+                            Ok(entry) => {
+                                let path = entry.path(); 
+
+                                if path.is_dir() {
+                                    let snap_name_op = path.file_name();
+
+                                    if let Some(snap_name) = snap_name_op {
+                                        let snap_name = snap_name.to_string_lossy().into_owned();
+
+                                        if !snap_log.snaps.contains_key(&snap_name) {
+                                            if let Err(err) = fs::remove_dir_all(&path) {
+                                                eprintln!("[\x1b[1;91m-\x1b[0m] Failed to read snap log ({err})");
+                                            }
+                                            else {
+                                                println!("[\x1b[1;92m+\x1b[0m] Cleaned out {}", path.display());
+                                                amount += 1;
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            Err(err) => {
+                                println!("[\x1b[1;92m+\x1b[0m] Failed to read dir entry ({err})");
+                            }
+                        }
+                    }
+                },
+
+                Err(err) => {
+                    eprintln!("[\x1b[1;91m-\x1b[0m] Failed to read snap log ({err})");
+                }
+            }
+        },
+
+        None => {
+            eprintln!("[\x1b[1;91m-\x1b[0m] Failed to read snap log");
+        }
+    }
+    println!("[\x1b[1;92m+\x1b[0m] Cleaned out {amount} snaps");
 }
