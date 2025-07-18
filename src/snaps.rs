@@ -1,9 +1,12 @@
 use std::collections::HashMap;
+use std::ffi::OsStr;
 use std::fs;
 use std::io::Write;
+use std::process;
 use std::path;
 use std::io;
-use std::path::PathBuf;
+use std::path::Component;
+use std::path::{Path, PathBuf};
 use std::error::Error;
 use std::process::Command;
 use std::process::Stdio;
@@ -241,6 +244,34 @@ fn get_snaps_dir() -> String {
     snaps_dir
 }
 
+fn replace_component_in_path<P: AsRef<Path>>(path: P, name: &str, level: usize) -> Option<PathBuf> {
+    let path = path.as_ref();
+    let components: Vec<_> = path.components().collect();
+
+    if components.len() < level{
+        return None
+    }
+
+    let index_to_replace = components.len() - level;
+
+    let new_compoents = components.iter()
+        .enumerate()
+        .map(|(i, component)| {
+            if i == index_to_replace {
+                Component::Normal(OsStr::new(name)) }
+            else {
+                *component
+            }
+        });
+
+    let new_path = new_compoents.fold(PathBuf::new(), |mut new_path, cur_comp| {
+        new_path.push(cur_comp);
+        new_path
+    });
+
+    Some(new_path)
+}
+
 pub fn take_snap(snap_name: String, snap_config_path: Option<PathBuf>) {
     //let saved_snaps = get_all_snaps();
     match SnapLog::fetch() {
@@ -445,6 +476,62 @@ pub fn delete_snap(snap: String) {
     }
 }
 
+pub fn rename_snap(old_name: &str, new_name: &str) {
+    let mut snaplog = SnapLog::fetch().unwrap_or_else(|| {
+        println!("[\x1b[1;91m-\x1b[0m] Failed to read snap log");
+        process::exit(1);
+    });
+
+    
+    if !snaplog.snaps.contains_key(old_name) {
+        eprintln!("[\x1b[1;91m-\x1b[0m] Snap {old_name} does not exist");
+        process::exit(1);
+    }
+
+    let snap_path = snaplog.snaps.get(old_name).unwrap_or_else(|| {
+        eprintln!("[\x1b[1;91m-\x1b[0m] Failed to get snap from snap log");
+        process::exit(1);
+    });
+
+    let new_snap_path = replace_component_in_path(snap_path, new_name, 1).unwrap_or_else(|| {
+        eprintln!("[\x1b[1;91m-\x1b[0m] Failed");
+        process::exit(1);
+    });
+
+    fs::rename(snap_path, &new_snap_path).unwrap_or_else(|_| {
+        eprintln!("[\x1b[1;91m-\x1b[0m] Failed to rename snap directory");
+        process::exit(1);
+    });
+
+    let mut snap_meta = SnapMetaData::from(&new_snap_path.join("snap.json")).unwrap_or_else(|| {
+        eprintln!("[\x1b[1;91m-\x1b[0m] Failed to rename snap directory. DO NOT RUN -c, --clean\nRun the following command to restore snap 'mv {} {}'", new_snap_path.display(), snap_path.display());
+        process::exit(1);
+    });
+
+    snap_meta.items = snap_meta.items
+        .into_iter()
+        .map(|item| {
+            (item.0, replace_component_in_path(item.1, new_name, 3).unwrap())
+        })
+        .collect();
+
+    snap_meta.save(&new_snap_path.join("snap.json")).unwrap_or_else(|_| {
+        eprintln!("[\x1b[1;91m-\x1b[0m] Failed to save snap meta data. DO NOT RUN -c, --clean\nRun the following command to restore snap 'mv {} {}'", new_snap_path.display(), snap_path.display());
+        process::exit(1);
+    });
+    
+    snaplog.snaps.remove(old_name);
+    snaplog.snaps.insert(new_name.into(), new_snap_path);
+
+    snaplog.save().unwrap_or_else(|_| {
+        eprintln!("[\x1b[1;91m-\x1b[0m] Failed to update snaplog no changes made");
+        process::exit(1);
+    });
+
+    
+    println!("[\x1b[1;92m+\x1b[0m] Renamed snap to {new_name}");
+}
+
 pub fn list_snaps() {
     match SnapLog::fetch() {
         Some(snaplog) => {
@@ -510,5 +597,17 @@ pub fn clean_snaps() {
             eprintln!("[\x1b[1;91m-\x1b[0m] Failed to read snap log");
         }
     }
-    println!("[\x1b[1;92m+\x1b[0m] Cleaned out {amount} snaps");
+    println!("[\x1b[1;92m+\x1b[0m] Cleaned out {amount} snap(s)");
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+
+    #[test]
+    fn test_repalce_component() {
+        assert_eq!(replace_component_in_path(PathBuf::from("/home/bob/.config/hypr"), "waybar", 1), Some(PathBuf::from("/home/bob/.config/waybar")));
+        assert_eq!(replace_component_in_path(PathBuf::from("/home/bob/.config/hypr/scripts"), "waybar", 2), Some(PathBuf::from("/home/bob/.config/waybar/scripts")));
+    }
 }

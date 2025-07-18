@@ -29,7 +29,20 @@ struct Arg {
     list: bool,
 
     #[arg(short, long, help="Cleans out unuseable snaps")]
-    clean: bool
+    clean: bool,
+
+    #[arg(short, long, help="Rename a snap, ex. 'old_name:new_name'", value_parser = parse_rename_args)]
+    rename: Option<(String, String)>
+}
+
+fn parse_rename_args(s: &str) -> Result<(String, String), String> {
+    let parts: Vec<&str> = s.splitn(2, ':').collect();
+
+    if parts.len() != 2 {
+        return Err("Expected format 'old_name:new_name'".into());
+    }
+
+    Ok((parts[0].to_string(), parts[1].to_string()))
 }
 
 mod snaps;
@@ -45,6 +58,9 @@ fn main() {
     }
     else if let Some(snap) = cli.args.delete {
         snaps::delete_snap(snap);
+    }
+    else if let Some((old_name, new_name)) = cli.args.rename {
+        snaps::rename_snap(old_name.as_str(), new_name.as_str());
     }
     else if cli.args.list {
         snaps::list_snaps();
