@@ -452,28 +452,30 @@ pub fn transfer_snap(snap_name: String) {
 }
 
 pub fn delete_snap(snap: String) {
-    if let Some(ref mut snaplog) = SnapLog::fetch() {
-        if !snaplog.exist(snap.as_str()) {
-            eprintln!("[\x1b[1;91m-\x1b[0m] Snap {snap} does not exist");
-            return
-        }
+    let mut snaplog = SnapLog::fetch().unwrap_or_else(|| {
+        println!("[\x1b[1;91m-\x1b[0m] Failed to read snap log");
+        process::exit(1)
+    });
 
-        if let Some(snap_dir) = snaplog.snaps.remove(&snap) {
-            if let Ok(_) = fs::remove_dir_all(snap_dir) {
-                println!("[\x1b[1;92m+\x1b[0m] Deleted {snap} snap");
-            }
-            else {
-                eprintln!("[\x1b[1;91m-\x1b[0m] Failed to remove snap directory");
-            }
-        }
-        else {
-            eprintln!("[\x1b[1;91m-\x1b[0m] Failed to remove snap from snap log");
-        }
+    if !snaplog.exist(&snap) {
+        eprintln!("[\x1b[1;91m-\x1b[0m] Snap {snap} does not exist");
+        process::exit(1);
     }
 
-    else {
-        eprintln!("[\x1b[1;91m-\x1b[0m] Failed to read snap log")
-    }
+    let snap_dir = snaplog.snaps.remove(&snap).unwrap_or_else(|| {
+        eprintln!("[\x1b[1;91m-\x1b[0m] Snap {snap} does not exist");
+        process::exit(1);
+    });
+
+    fs::remove_dir_all(snap_dir).unwrap_or_else(|err| {
+        eprintln!("[\x1b[1;91m-\x1b[0m] Failed to remove snap directory, ({err})");
+        process::exit(1);
+    });
+
+    snaplog.save().unwrap_or_else(|_| {
+        eprintln!("[\x1b[1;91m-\x1b[0m] Failed to update snaplog, please try again");
+        process::exit(1);
+    });
 }
 
 pub fn rename_snap(old_name: &str, new_name: &str) {
