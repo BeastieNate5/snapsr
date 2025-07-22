@@ -232,6 +232,15 @@ impl SnapLog {
     }
 }
 
+impl Hooks {
+    fn new(pre_hook: Option<String>, post_hook: Option<String>) -> Self {
+        return Self {
+            pre_load: pre_hook,
+            post_load: post_hook
+        }
+    }
+}
+
 fn get_snap_config_dir() -> String {
     let user_home_dir = std::env::var("HOME").expect("Failed to read HOME env variable");
     let snaps_config_dir = user_home_dir + "/.config/snapsr";
@@ -272,8 +281,7 @@ fn replace_component_in_path<P: AsRef<Path>>(path: P, name: &str, level: usize) 
     Some(new_path)
 }
 
-pub fn take_snap(snap_name: String, snap_config_path: Option<PathBuf>) {
-    //let saved_snaps = get_all_snaps();
+pub fn cmd_snap(snap_name: String, snap_config_path: Option<PathBuf>, pre_hook: Option<String>, post_hook: Option<String>) {
     match SnapLog::fetch() {
         Some(snaplog) => {
             if snaplog.exist(snap_name.as_str()) {
@@ -362,7 +370,17 @@ pub fn take_snap(snap_name: String, snap_config_path: Option<PathBuf>) {
         }
     }
 
-    let snap_meta_data = SnapMetaData::new(items_src_to_dst, snap.hooks, size_of_snap);
+
+    let hooks : Option<Hooks>;
+    if pre_hook.is_some() || post_hook.is_some() {
+        hooks = Some(Hooks::new(pre_hook, post_hook))
+    }
+    else {
+        hooks = snap.hooks;
+    }
+
+
+    let snap_meta_data = SnapMetaData::new(items_src_to_dst, hooks, size_of_snap);
     if let Ok(_) = snap_meta_data.save(&snap_dir.join("snap.json")) {
         if let Some(mut snaplog) = SnapLog::fetch() {
             snaplog.snaps.insert(snap_name, snap_dir);
@@ -382,7 +400,7 @@ pub fn take_snap(snap_name: String, snap_config_path: Option<PathBuf>) {
     }
 }
 
-pub fn transfer_snap(snap_name: String) {
+pub fn cmd_transfer_snap(snap_name: String) {
     match SnapLog::fetch() {
         Some(snaplog) => {
             if !snaplog.exist(snap_name.as_str()) {
@@ -451,7 +469,7 @@ pub fn transfer_snap(snap_name: String) {
     println!("Transferred {}/{total}", total-failed);
 }
 
-pub fn delete_snap(snap: String) {
+pub fn cmd_delete_snap(snap: String) {
     let mut snaplog = SnapLog::fetch().unwrap_or_else(|| {
         println!("[\x1b[1;91m-\x1b[0m] Failed to read snap log");
         process::exit(1)
@@ -476,9 +494,11 @@ pub fn delete_snap(snap: String) {
         eprintln!("[\x1b[1;91m-\x1b[0m] Failed to update snaplog, please try again");
         process::exit(1);
     });
+
+    println!("[\x1b[1;92m+\x1b[0m] Deleted {snap}");
 }
 
-pub fn rename_snap(old_name: &str, new_name: &str) {
+pub fn cmd_rename_snap(old_name: &str, new_name: &str) {
     let mut snaplog = SnapLog::fetch().unwrap_or_else(|| {
         println!("[\x1b[1;91m-\x1b[0m] Failed to read snap log");
         process::exit(1);
@@ -534,7 +554,7 @@ pub fn rename_snap(old_name: &str, new_name: &str) {
     println!("[\x1b[1;92m+\x1b[0m] Renamed snap to {new_name}");
 }
 
-pub fn list_snaps() {
+pub fn cmd_list_snaps() {
     match SnapLog::fetch() {
         Some(snaplog) => {
             for (snap, snap_dir) in &snaplog.snaps {
@@ -550,7 +570,7 @@ pub fn list_snaps() {
     }
 }
 
-pub fn clean_snaps() {
+pub fn cmd_clean_snaps() {
     let mut amount: u8 = 0;
     let snaps_dir = get_snaps_dir();
     match SnapLog::fetch() {

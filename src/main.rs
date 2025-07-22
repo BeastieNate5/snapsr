@@ -5,12 +5,19 @@ use clap::{Parser, Args};
 #[derive(Parser)]
 #[command(name="Snapsr")]
 #[command(version="1.0")]
+#[command(about="Snaps", long_about = None)]
 struct Cli {
     #[command(flatten)]
     args: Arg,
 
     #[arg(short, long, value_name="SNAP_FILE", help="Sets what Snap config file to use")]
-    file: Option<PathBuf>
+    file: Option<PathBuf>,
+
+    #[arg(long, value_name="PRE_HOOK", help="Pre hook when snapping")]
+    pre: Option<String>,
+
+    #[arg(long, value_name="POST_HOOK", help="Post hook when snapping")]
+    post: Option<String>
 }
 
 #[derive(Args)]
@@ -51,21 +58,21 @@ fn main() {
     let cli = Cli::parse();
     
     if let Some(snap) = cli.args.snap {
-        snaps::take_snap(snap, cli.file);
+        snaps::cmd_snap(snap, cli.file, cli.pre, cli.post);
     }
     else if let Some(snap) = cli.args.transfer {
-        snaps::transfer_snap(snap);
+        snaps::cmd_transfer_snap(snap);
     }
     else if let Some(snap) = cli.args.delete {
-        snaps::delete_snap(snap);
+        snaps::cmd_delete_snap(snap);
     }
     else if let Some((old_name, new_name)) = cli.args.rename {
-        snaps::rename_snap(old_name.as_str(), new_name.as_str());
+        snaps::cmd_rename_snap(old_name.as_str(), new_name.as_str());
     }
     else if cli.args.list {
-        snaps::list_snaps();
+        snaps::cmd_list_snaps();
     }
     else if cli.args.clean {
-        snaps::clean_snaps();
+        snaps::cmd_clean_snaps();
     }
 }
