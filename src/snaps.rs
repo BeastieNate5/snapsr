@@ -64,6 +64,7 @@ impl SnapConfig {
     fn from(path: PathBuf) -> Option<Self> {
         match fs::read_to_string(path) {
             Ok(txt) => {
+                let txt = Self::parse_for_template(txt);
                 match toml::from_str(&txt) {
                     Ok(config) => Some(config),
                     Err(_) => None
@@ -72,6 +73,40 @@ impl SnapConfig {
 
             Err(_) => None
         }
+    }
+
+    fn parse_for_template(txt: String) -> String {
+        txt.lines()
+           .map(|line| {
+                let line = line.trim();
+                
+                if line.starts_with("template ") {
+                    let mut line_splitted = line.split_whitespace();
+                    let template_file_opt = line_splitted.nth(1);
+                    
+                    if let Some(template_file) = template_file_opt {
+                        let template_file_path = PathBuf::from(get_snap_config_dir()).join("templates").join(template_file);
+
+                        match fs::read_to_string(&template_file_path) {
+                            Ok(template_txt) => {
+                                template_txt
+                            },
+                            Err(err) => {
+                                println!("[\x1b[1;91m-\x1b[0m] Failed to read template {} ({err})", template_file_path.display());
+                                "".to_string()
+                            }
+                        }
+                    }
+                    else {
+                        "".to_string()
+                    }
+                }
+                else {
+                    line.to_string()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 }
 
@@ -89,14 +124,11 @@ impl ModuleConfig {
                         }
                     },
                     Err(_) => {
-                        // NOTE TO SELF, add an error display here
-                        //println!("");
                         continue;
                     }
                 }
             }
         }
-
         items
     }
 }
@@ -320,7 +352,7 @@ pub fn cmd_snap(snap_name: String, snap_config_path: Option<PathBuf>, pre_hook: 
     let snap = match snap {
         Some(config) => config,
         None => {
-            eprintln!("[\x1b[1;91m-\x1b[0m] Failed to create snap config");
+            eprintln!("[\x1b[1;91m-\x1b[0m] Failed to read snap config");
             return
         }
     };
