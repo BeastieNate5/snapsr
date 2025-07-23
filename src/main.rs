@@ -53,6 +53,7 @@ fn parse_rename_args(s: &str) -> Result<(String, String), String> {
 }
 
 mod snaps;
+mod ui;
 
 fn main() {
     let cli = Cli::parse();
