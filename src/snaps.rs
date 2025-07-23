@@ -379,6 +379,8 @@ pub fn cmd_snap(snap_name: String, snap_config_path: Option<PathBuf>, pre_hook: 
 
         let items = module.get_item_paths();
 
+        println!("[\x1b[1;92m+\x1b[0m] {module_name}: {} items", items.len());
+
         for item in items {
 
             if let (Some(parent), Some(file_child)) = (item.parent(), item.file_name()) {
@@ -390,12 +392,12 @@ pub fn cmd_snap(snap_name: String, snap_config_path: Option<PathBuf>, pre_hook: 
                     let saved_item_path = module_dir.join(file_key);
 
                     if let Ok(size) = fs::copy(&item, &saved_item_path) {
-                        println!("[\x1b[1;92m+\x1b[0m] Saved {} ({module_name})", item.display());
+                        println!("[\x1b[1;92m+\x1b[0m] Snapped {} ({module_name})", item.display());
                         items_src_to_dst.insert(item, saved_item_path);
                         size_of_snap += size;
                     }
                     else {
-                        println!("[\x1b[1;91m-\x1b[0m] Failed to save {}, skipping ({module_name})", item.display());
+                        println!("[\x1b[1;91m-\x1b[0m] Failed to snap {}, skipping ({module_name})", item.display());
                     }
                 } 
             }
