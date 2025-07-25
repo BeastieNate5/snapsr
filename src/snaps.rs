@@ -29,6 +29,7 @@ enum HookType {
 
 #[derive(Deserialize, Debug)]
 struct SnapConfig {
+    #[serde(default)]
     modules: HashMap<String, ModuleConfig>,
     hooks: Option<Hooks>
 }
