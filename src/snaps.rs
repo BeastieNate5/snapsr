@@ -16,6 +16,10 @@ use serde::Deserialize;
 use serde::Serialize;
 use chrono::prelude::*;
 
+use crate::logger;
+use crate::logger::log;
+use crate::logger::LogLevel;
+
 enum HookStatus {
     Success,
     Error,
@@ -93,7 +97,7 @@ impl SnapConfig {
                                 template_txt
                             },
                             Err(err) => {
-                                println!("[\x1b[1;91m-\x1b[0m] Failed to read template {} ({err})", template_file_path.display());
+                                log(logger::LogLevel::Error, format!("Failed to read template {} ({err})", template_file_path.display()).as_str());
                                 "".to_string()
                             }
                         }
@@ -319,20 +323,20 @@ pub fn cmd_snap(snap_name: String, snap_config_path: Option<PathBuf>, pre_hook: 
         Some(snaplog) => {
             if snaplog.exist(snap_name.as_str()) {
                 let mut input = String::new();
-                print!("Snap {snap_name} already exist. Do you wish to overwrite (y/N)? ");
+                log(logger::LogLevel::Info, format!("Snap {snap_name} already exist. Do you wish to overwrite (y/N)? ").as_str());
                 io::stdout().flush().unwrap();
                 io::stdin().read_line(&mut input).unwrap();
                 let input = input.trim();
                 let input = input.to_lowercase();
 
                 if input != "y" && input != "yes" {
-                    println!("[\x1b[1;92m+\x1b[0m] aborting");
+                    log(logger::LogLevel::Info, "aborting");
                     return;
                 }
             }
         },
         None => {
-            println!("[\x1b[1;91m-\x1b[0m] Failed to read snap log");
+            log(logger::LogLevel::Error, "Failed to read snap log");
             return;
         }
     }
@@ -353,7 +357,7 @@ pub fn cmd_snap(snap_name: String, snap_config_path: Option<PathBuf>, pre_hook: 
     let snap = match snap {
         Some(config) => config,
         None => {
-            eprintln!("[\x1b[1;91m-\x1b[0m] Failed to read snap config");
+            log(logger::LogLevel::Error, "Failed to read snap config");
             return
         }
     };
@@ -363,7 +367,7 @@ pub fn cmd_snap(snap_name: String, snap_config_path: Option<PathBuf>, pre_hook: 
     let snap_dir = path::Path::new(&snap_dir).join(&snap_name);
 
     if let Err(_) = fs::create_dir_all(&snap_dir) {
-        eprintln!("[\x1b[1;91m-\x1b[0m] Failed to create snap directory");
+        log(logger::LogLevel::Error, "Failed to create snap directory");
         return
     }
 
@@ -374,13 +378,13 @@ pub fn cmd_snap(snap_name: String, snap_config_path: Option<PathBuf>, pre_hook: 
         let module_dir = snap_dir.join(&module_name);
 
         if let Err(_) = fs::create_dir_all(&module_dir) {
-            println!("[\x1b[1;91m-\x1b[0m] Failed to create module directory for {module_name}");
+            log(logger::LogLevel::Error, format!("Failed to create module directory for {module_name}").as_str());
             continue;
         }
 
         let items = module.get_item_paths();
 
-        println!("[\x1b[1;92m+\x1b[0m] {module_name}: {} items", items.len());
+        log(logger::LogLevel::Info, format!("{module_name}: {} items", items.len()).as_str());
 
         for item in items {
 
@@ -393,12 +397,12 @@ pub fn cmd_snap(snap_name: String, snap_config_path: Option<PathBuf>, pre_hook: 
                     let saved_item_path = module_dir.join(file_key);
 
                     if let Ok(size) = fs::copy(&item, &saved_item_path) {
-                        println!("[\x1b[1;92m+\x1b[0m] Snapped {} ({module_name})", item.display());
+                        log(logger::LogLevel::Success, format!("Snapped {} ({module_name})", item.display()).as_str());
                         items_src_to_dst.insert(item, saved_item_path);
                         size_of_snap += size;
                     }
                     else {
-                        println!("[\x1b[1;91m-\x1b[0m] Failed to snap {}, skipping ({module_name})", item.display());
+                        log(logger::LogLevel::Error, format!("Failed to snap {}, skipping ({module_name})", item.display()).as_str());
                     }
                 } 
             }
@@ -421,17 +425,18 @@ pub fn cmd_snap(snap_name: String, snap_config_path: Option<PathBuf>, pre_hook: 
             snaplog.snaps.insert(snap_name, snap_dir);
             if let Ok(_) = snaplog.save() {
                 println!("[\x1b[1;92m+\x1b[0m] Sucessfully saved Snap");
+                log(logger::LogLevel::Success, "Sucessfully saved Snap");
             }
             else {
-                println!("[\x1b[1;91m-\x1b[0m] Failed to save snap log, this snap will be unusable");
+                log(logger::LogLevel::Error, "Failed to save snap log, this snap will be unusable");
             }
         }
         else {
-            println!("[\x1b[1;91m-\x1b[0m] Failed to read snap log, this snap will be unusable");
+            log(logger::LogLevel::Error, "Failed to save snap log, this snap will be unusable");
         }
     }
     else {
-        println!("[\x1b[1;91m-\x1b[0m] Failed to save snap meta data, this snap will be unusable");
+        log(logger::LogLevel::Error, "Failed to save snap log, this snap will be unusable");
     }
 }
 
@@ -439,12 +444,12 @@ pub fn cmd_transfer_snap(snap_name: String) {
     match SnapLog::fetch() {
         Some(snaplog) => {
             if !snaplog.exist(snap_name.as_str()) {
-                println!("[\x1b[1;91m-\x1b[0m] Snap {snap_name} does not exist");
+                log(logger::LogLevel::Error, format!("Snap {snap_name} does not exist").as_str());
                 return;
             }
         },
         None => {
-            println!("[\x1b[1;91m-\x1b[0m] Failed to read snap log");
+            log(logger::LogLevel::Error, "Failed to read snap log");
             return
         }
     }
@@ -462,75 +467,75 @@ pub fn cmd_transfer_snap(snap_name: String) {
         Some(ref snap_meta) => {
 
             if snap_meta.hook_exist(HookType::Pre) {
-                println!("[\x1b[1;92m+\x1b[0m] Executing pre hook");
+                log(logger::LogLevel::Info, "Executing pre-hook");
                 let status = snap_meta.run_hook(HookType::Pre);
                 match status {
-                    HookStatus::Success => println!("[\x1b[1;92m+\x1b[0m] Pre hook executed successfully"),
-                    HookStatus::Error => println!("[\x1b[1;91m-\x1b[0m] Pre hook failed to execute"),
-                    HookStatus::Nothing => println!("[\x1b[1;91m-\x1b[0m] Pre hook is empty")
+                    HookStatus::Success => log(logger::LogLevel::Success, "Pre-hook executed successfully"),
+                    HookStatus::Error => log(logger::LogLevel::Error, "Pre-hook failed to execute"),
+                    HookStatus::Nothing => log(logger::LogLevel::Warn, "Pre-hook is empty")
                 }
             }
 
             for (src_item, dst_item) in &snap_meta.items {
                 total += 1;
                 if let Err(_) = fs::copy(&dst_item, &src_item) {
-                    println!("[\x1b[1;91m-\x1b[0m] Failed to transfer item {}", dst_item.display());
+                    log(logger::LogLevel::Error, format!("Failed to transfer item {}", dst_item.display()).as_str());
                     failed += 1;
                     continue;
                 }
-                println!("[\x1b[1;92m+\x1b[0m] Transferred {}", dst_item.display());
+                log(LogLevel::Success, format!("Transferred {}", dst_item.display()).as_str());
             } 
 
             if snap_meta.hook_exist(HookType::Post) {
-                println!("[\x1b[1;92m+\x1b[0m] Executing post hook");
+                log(logger::LogLevel::Success, "Executing post-hook");
                 let status = snap_meta.run_hook(HookType::Post);
 
                 match status {
-                    HookStatus::Success => println!("[\x1b[1;92m+\x1b[0m] Post hook executed successfully"),
-                    HookStatus::Error => println!("[\x1b[1;91m-\x1b[0m] Post hook failed to execute"),
-                    HookStatus::Nothing => println!("[\x1b[1;91m-\x1b[0m] Post hook is empty")
+                    HookStatus::Success => log(logger::LogLevel::Success, "Post-hook executed successfully"),
+                    HookStatus::Error => log(logger::LogLevel::Error, "Post-hook failed to execute"),
+                    HookStatus::Nothing => log(logger::LogLevel::Warn, "Post-hook is empty")
+
                 }
             }
         },
 
         None => {
-            eprintln!("[\x1b[1;91m-\x1b[0m] Failed to read {snap_name}'s metadata");
+            log(logger::LogLevel::Error, format!("Failed to read {snap_name}'s metadata").as_str());
             return
         }
     };
 
-
-    println!("[\x1b[1;92m+\x1b[0m] Transfer complete");
-    println!("Transferred {}/{total}", total-failed);
+    log(logger::LogLevel::Success, "Transfer complete");
+    log(logger::LogLevel::Info, format!("Transferred {}/{total}", total-failed).as_str());
 }
 
 pub fn cmd_delete_snap(snap: String) {
     let mut snaplog = SnapLog::fetch().unwrap_or_else(|| {
-        println!("[\x1b[1;91m-\x1b[0m] Failed to read snap log");
+        log(logger::LogLevel::Error, "Failed to read snap log");
         process::exit(1)
     });
 
     if !snaplog.exist(&snap) {
-        eprintln!("[\x1b[1;91m-\x1b[0m] Snap {snap} does not exist");
+        log(logger::LogLevel::Error, format!("Snap {snap} does not exist").as_str());
         process::exit(1);
     }
 
     let snap_dir = snaplog.snaps.remove(&snap).unwrap_or_else(|| {
-        eprintln!("[\x1b[1;91m-\x1b[0m] Snap {snap} does not exist");
+        log(logger::LogLevel::Error, format!("Snap {snap} does not exist").as_str());
         process::exit(1);
     });
 
     fs::remove_dir_all(snap_dir).unwrap_or_else(|err| {
-        eprintln!("[\x1b[1;91m-\x1b[0m] Failed to remove snap directory, ({err})");
+        log(logger::LogLevel::Error, format!("Failed to remove snap directory ({err})").as_str());
         process::exit(1);
     });
 
     snaplog.save().unwrap_or_else(|_| {
-        eprintln!("[\x1b[1;91m-\x1b[0m] Failed to update snaplog, please try again");
+        log(logger::LogLevel::Error, "Failed to update snap log, please try again");
         process::exit(1);
     });
 
-    println!("[\x1b[1;92m+\x1b[0m] Deleted {snap}");
+    log(logger::LogLevel::Success, format!("Deleted {snap}").as_str())
 }
 
 pub fn cmd_rename_snap(old_name: &str, new_name: &str) {
