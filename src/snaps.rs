@@ -613,53 +613,50 @@ pub fn cmd_list_snaps() {
 pub fn cmd_clean_snaps() {
     let mut amount: u8 = 0;
     let snaps_dir = get_snaps_dir();
-    match SnapLog::fetch() {
 
-        Some(snap_log) => {
-            match fs::read_dir(snaps_dir) {
-                Ok(dir_iter) => {
+    let snaplog = SnapLog::fetch().unwrap_or_else(|| {
+        log(logger::LogLevel::Error, "Failed to read snap log");
+        process::exit(1);
+    });
 
-                    for entry_result in dir_iter {
-                        match entry_result {
-                            Ok(entry) => {
-                                let path = entry.path(); 
+    let dir_entries = fs::read_dir(snaps_dir).unwrap_or_else(|err| {
+        log(logger::LogLevel::Error, format!("Failed to read snaps directory ({err})").as_str());
+        process::exit(1);
+    });
 
-                                if path.is_dir() {
-                                    let snap_name_op = path.file_name();
+    for entry in dir_entries {
+        match entry {
+            Ok(entry) => {
+                let path = entry.path();
 
-                                    if let Some(snap_name) = snap_name_op {
-                                        let snap_name = snap_name.to_string_lossy().into_owned();
+                if path.is_dir() {
+                    let snap_name_op = path.file_name();
 
-                                        if !snap_log.snaps.contains_key(&snap_name) {
-                                            if let Err(err) = fs::remove_dir_all(&path) {
-                                                eprintln!("[\x1b[1;91m-\x1b[0m] Failed to read snap log ({err})");
-                                            }
-                                            else {
-                                                println!("[\x1b[1;92m+\x1b[0m] Cleaned out {}", path.display());
-                                                amount += 1;
-                                            }
-                                        }
-                                    }
-                                }
-                            },
-                            Err(err) => {
-                                println!("[\x1b[1;92m+\x1b[0m] Failed to read dir entry ({err})");
+                    if let Some(snap_name) = snap_name_op {
+                        let snap_name = snap_name.to_string_lossy().into_owned();
+
+                        if !snaplog.snaps.contains_key(&snap_name) {
+                            if let Err(err) = fs::remove_dir_all(&path) {
+                                log(logger::LogLevel::Error, format!("Failed to delete {snap_name}'s directory ({err})").as_str());
+                            }
+                            else {
+                                log(logger::LogLevel::Success, format!("Cleaned out {snap_name}").as_str());
+                                amount += 1;
                             }
                         }
                     }
-                },
-
-                Err(err) => {
-                    eprintln!("[\x1b[1;91m-\x1b[0m] Failed to read snap log ({err})");
                 }
-            }
-        },
-
-        None => {
-            eprintln!("[\x1b[1;91m-\x1b[0m] Failed to read snap log");
+            },
+            Err(err) => log(logger::LogLevel::Error, format!("Failed to read directory entry ({err})").as_str()),
         }
     }
-    println!("[\x1b[1;92m+\x1b[0m] Cleaned out {amount} snap(s)");
+
+    if amount == 0 {
+        log(logger::LogLevel::Info, "Nothing to clean");
+    }
+    else {
+        log(logger::LogLevel::Success, format!("Cleaned {amount} snaps").as_str());
+    }
 }
 
 #[cfg(test)]
