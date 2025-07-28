@@ -333,6 +333,13 @@ pub fn cmd_snap(snap_name: String, snap_config_path: Option<PathBuf>, pre_hook: 
                     log(logger::LogLevel::Info, "aborting");
                     return;
                 }
+
+                if let Some(log_entry) = snaplog.snaps.get(&snap_name) {
+                    fs::remove_dir_all(log_entry).unwrap_or_else(|err| {
+                        log(logger::LogLevel::Error, format!("Failed to clear existing snap ({err})").as_str());
+                        process::exit(1);
+                    });
+                }
             }
         },
         None => {
