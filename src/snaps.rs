@@ -17,6 +17,9 @@ use serde::Deserialize;
 use serde::Serialize;
 use chrono::prelude::*;
 
+use clap::builder::styling::Style;
+use ratatui::{layout::Constraint, prelude::CrosstermBackend, text::Text, widgets::{Row, Table}, Terminal};
+
 use crate::logger;
 use crate::logger::log;
 use crate::logger::LogLevel;
@@ -267,6 +270,14 @@ impl SnapLog {
 
     fn exist(&self, snap_name: &str) -> bool {
         self.snaps.contains_key(snap_name)
+    }
+
+    fn get_snaps_sorted(&self) -> BTreeMap<String, PathBuf> {
+        self.snaps.iter()
+            .map(|(k, v)| {
+            (k.clone(), v.clone())
+        })
+        .collect()
     }
 }
 
@@ -603,18 +614,33 @@ pub fn cmd_rename_snap(old_name: &str, new_name: &str) {
 }
 
 pub fn cmd_list_snaps() {
-    match SnapLog::fetch() {
-        Some(snaplog) => {
-            let sorted_snaps : BTreeMap<String, PathBuf> = snaplog.snaps.into_iter().collect();
+    let snaps = SnapLog::fetch().unwrap_or_else(|| {
+        log(logger::LogLevel::Error, "Failed to read snap log");
+        process::exit(1);
+    })
+    .get_snaps_sorted();
 
-            for snap in sorted_snaps {
-                if let Some(snap_meta) = SnapMetaData::from(&snap.1.join("snap.json")) {
-                    println!("{} {}kb", snap.0, snap_meta.size/100);
-                }
+    let mut terminal = ratatui::init();
+    terminal.draw(|frame| {
+        let mut rows = Vec::new();
+        for snap in &snaps {
+            if let Some(snap_meta) = SnapMetaData::from(&snap.1.join("snap.json")) {
+                rows.push(Row::new(vec![snap.0.clone(),snap.0.clone(),snap.0.clone()]));
             }
-        },
-        None => println!("[\x1b[1;91m-\x1b[0m] Failed to read snap log")
-    }
+        }
+
+        let widths = [
+            Constraint::Length(10),
+            Constraint::Length(10),
+            Constraint::Length(10)
+        ];
+        let table = Table::new(rows, widths)
+            .column_spacing(1)
+            .header(Row::new(vec!["Name", "Size", "Last modified"]));
+        frame.render_widget(table, frame.area());
+    }).unwrap_or_else(|_err| {
+        process::exit(1)
+    });
 }
 
 pub fn cmd_clean_snaps() {
