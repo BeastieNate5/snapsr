@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fs;
@@ -604,12 +605,11 @@ pub fn cmd_rename_snap(old_name: &str, new_name: &str) {
 pub fn cmd_list_snaps() {
     match SnapLog::fetch() {
         Some(snaplog) => {
-            for (snap, snap_dir) in &snaplog.snaps {
-                match SnapMetaData::from(&snap_dir.join("snap.json")) {
-                    Some(snap_meta) => {
-                        println!("{snap}: {}kb", snap_meta.size/100);
-                    },
-                    None => {}
+            let sorted_snaps : BTreeMap<String, PathBuf> = snaplog.snaps.into_iter().collect();
+
+            for snap in sorted_snaps {
+                if let Some(snap_meta) = SnapMetaData::from(&snap.1.join("snap.json")) {
+                    println!("{} {}kb", snap.0, snap_meta.size/100);
                 }
             }
         },
