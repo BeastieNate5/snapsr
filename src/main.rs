@@ -92,7 +92,6 @@ fn setup_env() {
 
 mod snaps;
 mod logger;
-mod ui;
 
 fn main() {
     let cli = Cli::parse();

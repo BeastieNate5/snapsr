@@ -17,8 +17,6 @@ use serde::Deserialize;
 use serde::Serialize;
 use chrono::prelude::*;
 
-use clap::builder::styling::Style;
-use ratatui::{layout::Constraint, prelude::CrosstermBackend, text::Text, widgets::{Row, Table}, Terminal};
 
 use crate::logger;
 use crate::logger::log;
@@ -33,6 +31,12 @@ enum HookStatus {
 enum HookType {
     Pre,
     Post
+}
+
+struct DisplayTable<'a> {
+    headers: Vec<&'a str>,
+    rows: Vec<Vec<&'a str>>,
+    widths: Vec<usize>
 }
 
 #[derive(Deserialize, Debug)]
@@ -67,6 +71,42 @@ struct SnapMetaData {
 struct SnapLog {
     #[serde(default)]
     snaps: HashMap<String, PathBuf>
+}
+
+impl<'a> DisplayTable<'a> {
+    fn from(headers: Vec<&'a str>, rows: Vec<Vec<&'a str>>, widths: Vec::<usize>) -> Self {
+        Self {
+            headers,
+            rows,
+            widths
+        }
+    }
+
+    fn display(&self) {
+        let format_row = |row: &Vec<&str>| {
+            row.iter()
+                .zip(&self.widths)
+                .map(|(text, width)| {
+                    format!("{:<width$}", text, width = *width)
+                })
+                .collect::<Vec<String>>()
+                .join(" | ")
+        };
+
+        println!("{}", format_row(&self.headers));
+
+        let sep: String = self.widths.iter()
+            .map(|width| {
+                "-".repeat(*width)
+            })
+            .collect::<Vec<String>>()
+            .join("-+-");
+        println!("{}", sep);
+
+        for row in &self.rows {
+            println!("{}", format_row(row))
+        }
+    }
 }
 
 impl SnapConfig {
@@ -614,33 +654,8 @@ pub fn cmd_rename_snap(old_name: &str, new_name: &str) {
 }
 
 pub fn cmd_list_snaps() {
-    let snaps = SnapLog::fetch().unwrap_or_else(|| {
-        log(logger::LogLevel::Error, "Failed to read snap log");
-        process::exit(1);
-    })
-    .get_snaps_sorted();
-
-    let mut terminal = ratatui::init();
-    terminal.draw(|frame| {
-        let mut rows = Vec::new();
-        for snap in &snaps {
-            if let Some(snap_meta) = SnapMetaData::from(&snap.1.join("snap.json")) {
-                rows.push(Row::new(vec![snap.0.clone(),snap.0.clone(),snap.0.clone()]));
-            }
-        }
-
-        let widths = [
-            Constraint::Length(10),
-            Constraint::Length(10),
-            Constraint::Length(10)
-        ];
-        let table = Table::new(rows, widths)
-            .column_spacing(1)
-            .header(Row::new(vec!["Name", "Size", "Last modified"]));
-        frame.render_widget(table, frame.area());
-    }).unwrap_or_else(|_err| {
-        process::exit(1)
-    });
+    let table = DisplayTable::from(vec!["1", "2", "3"], vec![vec!["Cell1", "Cell2", "Cell3"], vec!["Cell4", "Cell5", "Cell6"]], vec![10,10,10]);
+    table.display();
 }
 
 pub fn cmd_clean_snaps() {
