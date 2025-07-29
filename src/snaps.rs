@@ -368,7 +368,7 @@ fn replace_component_in_path<P: AsRef<Path>>(path: P, name: &str, level: usize) 
     Some(new_path)
 }
 
-pub fn cmd_snap(snap_name: String, snap_config_path: Option<PathBuf>, pre_hook: Option<String>, post_hook: Option<String>) {
+pub fn cmd_snap(snap_name: String, snap_config_path: Option<PathBuf>, pre_hook: Option<String>, post_hook: Option<String>, verbose: bool) {
     match SnapLog::fetch() {
         Some(snaplog) => {
             if snaplog.exist(snap_name.as_str()) {
@@ -454,7 +454,9 @@ pub fn cmd_snap(snap_name: String, snap_config_path: Option<PathBuf>, pre_hook: 
                     let saved_item_path = module_dir.join(file_key);
 
                     if let Ok(size) = fs::copy(&item, &saved_item_path) {
-                        log(logger::LogLevel::Success, format!("Snapped {} ({module_name})", item.display()).as_str());
+                        if verbose {
+                            log(logger::LogLevel::Success, format!("Snapped {} ({module_name})", item.display()).as_str());
+                        }
                         items_src_to_dst.insert(item, saved_item_path);
                         size_of_snap += size;
                     }
@@ -481,7 +483,6 @@ pub fn cmd_snap(snap_name: String, snap_config_path: Option<PathBuf>, pre_hook: 
         if let Some(mut snaplog) = SnapLog::fetch() {
             snaplog.snaps.insert(snap_name, snap_dir);
             if let Ok(_) = snaplog.save() {
-                println!("[\x1b[1;92m+\x1b[0m] Sucessfully saved Snap");
                 log(logger::LogLevel::Success, "Sucessfully saved Snap");
             }
             else {
@@ -497,7 +498,7 @@ pub fn cmd_snap(snap_name: String, snap_config_path: Option<PathBuf>, pre_hook: 
     }
 }
 
-pub fn cmd_transfer_snap(snap_name: String) {
+pub fn cmd_transfer_snap(snap_name: String, verbose: bool) {
     match SnapLog::fetch() {
         Some(snaplog) => {
             if !snaplog.exist(snap_name.as_str()) {
@@ -540,11 +541,15 @@ pub fn cmd_transfer_snap(snap_name: String) {
                     failed += 1;
                     continue;
                 }
-                log(LogLevel::Success, format!("Transferred {}", dst_item.display()).as_str());
+                if verbose {
+                    log(LogLevel::Success, format!("Transferred {}", dst_item.display()).as_str());
+                }
             } 
 
             if snap_meta.hook_exist(HookType::Post) {
-                log(logger::LogLevel::Success, "Executing post-hook");
+                if verbose {
+                    log(logger::LogLevel::Success, "Executing post-hook");
+                }
                 let status = snap_meta.run_hook(HookType::Post);
 
                 match status {
