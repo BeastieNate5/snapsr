@@ -83,30 +83,28 @@ impl<'a> DisplayTable<'a> {
     }
 
     fn display(&self) {
-        let format_row = |row: &Vec<&str>| {
+        let format_row = |row: &Vec<&'a str>| {
             row.iter()
                 .zip(&self.widths)
-                .map(|(text, width)| {
-                    format!("{:<width$}", text, width = *width)
-                })
+                .map(|(text, width)| format!("{:<width$}", text, width = width))
                 .collect::<Vec<String>>()
                 .join(" | ")
         };
-
-        println!("{}", format_row(&self.headers));
-
-        let sep: String = self.widths.iter()
-            .map(|width| {
-                "-".repeat(*width)
-            })
+        
+        let sep : String = self.widths
+            .iter()
+            .map(|width| "-".repeat(*width))
             .collect::<Vec<String>>()
             .join("-+-");
+
+        println!("{}", format_row(&self.headers));
         println!("{}", sep);
 
         for row in &self.rows {
-            println!("{}", format_row(row))
+            println!("{}", format_row(&row))
         }
     }
+
 }
 
 impl SnapConfig {
@@ -654,7 +652,14 @@ pub fn cmd_rename_snap(old_name: &str, new_name: &str) {
 }
 
 pub fn cmd_list_snaps() {
-    let table = DisplayTable::from(vec!["1", "2", "3"], vec![vec!["Cell1", "Cell2", "Cell3"], vec!["Cell4", "Cell5", "Cell6"]], vec![10,10,10]);
+    let snaps = SnapLog::fetch()
+        .unwrap_or_else(|| {
+            log(logger::LogLevel::Error, "Failed to read snap log");
+            process::exit(1);
+        })
+        .get_snaps_sorted();
+
+    let table = DisplayTable::from(vec!["1", "2", "3"], vec![vec!["Cell1", "Cell2", "Cell3"], vec!["Cell4", "Cell5", "Cell6"]], vec![5,10,10]);
     table.display();
 }
 
