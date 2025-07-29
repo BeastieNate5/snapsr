@@ -33,9 +33,9 @@ enum HookType {
     Post
 }
 
-struct DisplayTable<'a> {
-    headers: Vec<&'a str>,
-    rows: Vec<Vec<&'a str>>,
+struct DisplayTable {
+    headers: Vec<String>,
+    rows: Vec<Vec<String>>,
     widths: Vec<usize>
 }
 
@@ -73,8 +73,8 @@ struct SnapLog {
     snaps: HashMap<String, PathBuf>
 }
 
-impl<'a> DisplayTable<'a> {
-    fn from(headers: Vec<&'a str>, rows: Vec<Vec<&'a str>>, widths: Vec::<usize>) -> Self {
+impl DisplayTable {
+    fn from(headers: Vec<String>, rows: Vec<Vec<String>>, widths: Vec::<usize>) -> Self {
         Self {
             headers,
             rows,
@@ -83,7 +83,7 @@ impl<'a> DisplayTable<'a> {
     }
 
     fn display(&self) {
-        let format_row = |row: &Vec<&'a str>| {
+        let format_row = |row: &Vec<String>| {
             row.iter()
                 .zip(&self.widths)
                 .map(|(text, width)| format!("{:<width$}", text, width = width))
@@ -658,8 +658,39 @@ pub fn cmd_list_snaps() {
             process::exit(1);
         })
         .get_snaps_sorted();
+    
+    let headers = vec![String::from("Name"), String::from("Items"), String::from("Size"), String::from("Last modified"), ];
+    let mut rows = Vec::new();
+    let mut max_width_name = 4;
+    let mut max_width_size = 5;
+    let mut max_width_items = 5;
 
-    let table = DisplayTable::from(vec!["1", "2", "3"], vec![vec!["Cell1", "Cell2", "Cell3"], vec!["Cell4", "Cell5", "Cell6"]], vec![5,10,10]);
+    for (name, snap_path) in &snaps {
+        if let Some(snap_meta) = SnapMetaData::from(&snap_path.join("snap.json")) {
+            let snap_size = snap_meta.size.to_string();
+            let snap_items_amount = snap_meta.items.len().to_string();
+
+            let name_len = name.chars().count();
+            let size_len = snap_size.chars().count();
+            let items_len = snap_items_amount.chars().count();
+
+            if name_len > max_width_name {
+                max_width_name = name_len;
+            }
+
+            if size_len > max_width_size {
+                max_width_size = size_len;
+            }
+
+            if items_len > max_width_items {
+                max_width_items = items_len;
+            }
+
+            rows.push(vec![name.into(), snap_items_amount, snap_size, snap_meta.timestamp.to_string()]);
+        }
+    }
+
+    let table = DisplayTable::from(headers, rows, vec![max_width_name,max_width_items,max_width_size,36]);
     table.display();
 }
 
