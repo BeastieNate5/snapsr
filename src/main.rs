@@ -13,6 +13,9 @@ struct Cli {
     #[arg(short, long, value_name="SNAP_FILE", help="Sets what Snap config file to use")]
     file: Option<PathBuf>,
 
+    #[arg(short, help="Verbose output")]
+    verbose: bool,
+
     #[arg(long, value_name="PRE_HOOK", help="Pre hook when snapping")]
     pre: Option<String>,
 
@@ -98,11 +101,11 @@ fn main() {
     
     if let Some(snap) = cli.args.snap {
         setup_env();
-        snaps::cmd_snap(snap, cli.file, cli.pre, cli.post);
+        snaps::cmd_snap(snap, cli.file, cli.pre, cli.post, cli.verbose);
     }
     else if let Some(snap) = cli.args.transfer {
         setup_env();
-        snaps::cmd_transfer_snap(snap);
+        snaps::cmd_transfer_snap(snap, cli.verbose);
     }
     else if let Some(snap) = cli.args.delete {
         setup_env();
