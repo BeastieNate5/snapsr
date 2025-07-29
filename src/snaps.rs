@@ -17,6 +17,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use chrono::prelude::*;
 
+
 use crate::logger;
 use crate::logger::log;
 use crate::logger::LogLevel;
@@ -30,6 +31,12 @@ enum HookStatus {
 enum HookType {
     Pre,
     Post
+}
+
+struct DisplayTable {
+    headers: Vec<String>,
+    rows: Vec<Vec<String>>,
+    widths: Vec<usize>
 }
 
 #[derive(Deserialize, Debug)]
@@ -64,6 +71,40 @@ struct SnapMetaData {
 struct SnapLog {
     #[serde(default)]
     snaps: HashMap<String, PathBuf>
+}
+
+impl DisplayTable {
+    fn from(headers: Vec<String>, rows: Vec<Vec<String>>, widths: Vec::<usize>) -> Self {
+        Self {
+            headers,
+            rows,
+            widths
+        }
+    }
+
+    fn display(&self) {
+        let format_row = |row: &Vec<String>| {
+            row.iter()
+                .zip(&self.widths)
+                .map(|(text, width)| format!("{:<width$}", text, width = width))
+                .collect::<Vec<String>>()
+                .join(" | ")
+        };
+        
+        let sep : String = self.widths
+            .iter()
+            .map(|width| "-".repeat(*width))
+            .collect::<Vec<String>>()
+            .join("-+-");
+
+        println!("{}", format_row(&self.headers));
+        println!("{}", sep);
+
+        for row in &self.rows {
+            println!("{}", format_row(&row))
+        }
+    }
+
 }
 
 impl SnapConfig {
@@ -267,6 +308,14 @@ impl SnapLog {
 
     fn exist(&self, snap_name: &str) -> bool {
         self.snaps.contains_key(snap_name)
+    }
+
+    fn get_snaps_sorted(&self) -> BTreeMap<String, PathBuf> {
+        self.snaps.iter()
+            .map(|(k, v)| {
+            (k.clone(), v.clone())
+        })
+        .collect()
     }
 }
 
@@ -603,18 +652,46 @@ pub fn cmd_rename_snap(old_name: &str, new_name: &str) {
 }
 
 pub fn cmd_list_snaps() {
-    match SnapLog::fetch() {
-        Some(snaplog) => {
-            let sorted_snaps : BTreeMap<String, PathBuf> = snaplog.snaps.into_iter().collect();
+    let snaps = SnapLog::fetch()
+        .unwrap_or_else(|| {
+            log(logger::LogLevel::Error, "Failed to read snap log");
+            process::exit(1);
+        })
+        .get_snaps_sorted();
+    
+    let headers = vec![String::from("Name"), String::from("Items"), String::from("Size"), String::from("Last modified"), ];
+    let mut rows = Vec::new();
+    let mut max_width_name = 4;
+    let mut max_width_size = 5;
+    let mut max_width_items = 5;
 
-            for snap in sorted_snaps {
-                if let Some(snap_meta) = SnapMetaData::from(&snap.1.join("snap.json")) {
-                    println!("{} {}kb", snap.0, snap_meta.size/100);
-                }
+    for (name, snap_path) in &snaps {
+        if let Some(snap_meta) = SnapMetaData::from(&snap_path.join("snap.json")) {
+            let snap_size = snap_meta.size.to_string();
+            let snap_items_amount = snap_meta.items.len().to_string();
+
+            let name_len = name.chars().count();
+            let size_len = snap_size.chars().count();
+            let items_len = snap_items_amount.chars().count();
+
+            if name_len > max_width_name {
+                max_width_name = name_len;
             }
-        },
-        None => println!("[\x1b[1;91m-\x1b[0m] Failed to read snap log")
+
+            if size_len > max_width_size {
+                max_width_size = size_len;
+            }
+
+            if items_len > max_width_items {
+                max_width_items = items_len;
+            }
+
+            rows.push(vec![name.into(), snap_items_amount, snap_size, snap_meta.timestamp.to_string()]);
+        }
     }
+
+    let table = DisplayTable::from(headers, rows, vec![max_width_name,max_width_items,max_width_size,36]);
+    table.display();
 }
 
 pub fn cmd_clean_snaps() {
