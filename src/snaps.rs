@@ -430,6 +430,8 @@ pub fn cmd_snap(snap_name: String, snap_config_path: Option<PathBuf>, pre_hook: 
 
     let mut items_src_to_dst : HashMap<PathBuf, PathBuf> = HashMap::new();
     let mut size_of_snap = 0;
+    let mut total_items = 0;
+    let mut snapped_items_amount = 0;
 
     for (module_name, module) in &snap.modules {
         let module_dir = snap_dir.join(&module_name);
@@ -440,6 +442,7 @@ pub fn cmd_snap(snap_name: String, snap_config_path: Option<PathBuf>, pre_hook: 
         }
 
         let items = module.get_item_paths();
+        total_items += items.len();
 
         log(logger::LogLevel::Info, format!("{module_name}: {} items", items.len()).as_str());
 
@@ -459,6 +462,7 @@ pub fn cmd_snap(snap_name: String, snap_config_path: Option<PathBuf>, pre_hook: 
                         }
                         items_src_to_dst.insert(item, saved_item_path);
                         size_of_snap += size;
+                        snapped_items_amount += 1;
                     }
                     else {
                         log(logger::LogLevel::Error, format!("Failed to snap {}, skipping ({module_name})", item.display()).as_str());
@@ -483,7 +487,7 @@ pub fn cmd_snap(snap_name: String, snap_config_path: Option<PathBuf>, pre_hook: 
         if let Some(mut snaplog) = SnapLog::fetch() {
             snaplog.snaps.insert(snap_name, snap_dir);
             if let Ok(_) = snaplog.save() {
-                log(logger::LogLevel::Success, "Sucessfully saved Snap");
+                log(logger::LogLevel::Success, format!("Saved Snap {snapped_items_amount}/{total_items} item(s)").as_str())
             }
             else {
                 log(logger::LogLevel::Error, "Failed to save snap log, this snap will be unusable");
@@ -567,8 +571,7 @@ pub fn cmd_transfer_snap(snap_name: String, verbose: bool) {
         }
     };
 
-    log(logger::LogLevel::Success, "Transfer complete");
-    log(logger::LogLevel::Info, format!("Transferred {}/{total}", total-failed).as_str());
+    log(logger::LogLevel::Info, format!("Transferred {}/{total} item(s)", total-failed).as_str());
 }
 
 pub fn cmd_delete_snap(snap: String) {
