@@ -29,8 +29,8 @@ struct Arg {
     #[arg(short, long, value_name="SNAP_NAME", help="Saves a Snap")]
     snap: Option<String>,
 
-    #[arg(short, long, value_name="SNAP_NAME", help="???")]
-    transfer: Option<String>,
+    #[arg(short, long, value_name="SNAP_NAME", help="Restores a Snap")]
+    restore: Option<String>,
 
     #[arg(short, long, value_name="SNAP_NAME", help="Deletes a Snap")]
     delete: Option<String>,
@@ -41,7 +41,7 @@ struct Arg {
     #[arg(short, long, help="Cleans out unuseable snaps")]
     clean: bool,
 
-    #[arg(short, long, help="Rename a snap, ex. 'old_name:new_name'", value_parser = parse_rename_args)]
+    #[arg(long, help="Rename a snap, ex. 'old_name:new_name'", value_parser = parse_rename_args)]
     rename: Option<(String, String)>
 }
 
@@ -103,9 +103,9 @@ fn main() {
         setup_env();
         snaps::cmd_snap(snap, cli.file, cli.pre, cli.post, cli.verbose);
     }
-    else if let Some(snap) = cli.args.transfer {
+    else if let Some(snap) = cli.args.restore {
         setup_env();
-        snaps::cmd_transfer_snap(snap, cli.verbose);
+        snaps::cmd_restore_snap(snap, cli.verbose);
     }
     else if let Some(snap) = cli.args.delete {
         setup_env();
