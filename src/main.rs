@@ -4,8 +4,7 @@ use clap::{Args, Parser};
 
 #[derive(Parser)]
 #[command(name="Snapsr")]
-#[command(version="1.0")]
-#[command(about="Snaps", long_about = None)]
+#[command(version="0.0.1")]
 struct Cli {
     #[command(flatten)]
     args: Arg,
