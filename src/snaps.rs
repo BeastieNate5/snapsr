@@ -502,7 +502,7 @@ pub fn cmd_snap(snap_name: String, snap_config_path: Option<PathBuf>, pre_hook: 
     }
 }
 
-pub fn cmd_transfer_snap(snap_name: String, verbose: bool) {
+pub fn cmd_restore_snap(snap_name: String, verbose: bool) {
     match SnapLog::fetch() {
         Some(snaplog) => {
             if !snaplog.exist(snap_name.as_str()) {
@@ -541,12 +541,12 @@ pub fn cmd_transfer_snap(snap_name: String, verbose: bool) {
             for (src_item, dst_item) in &snap_meta.items {
                 total += 1;
                 if let Err(_) = fs::copy(&dst_item, &src_item) {
-                    log(logger::LogLevel::Error, format!("Failed to transfer item {}", dst_item.display()).as_str());
+                    log(logger::LogLevel::Error, format!("Failed to restore item {}", dst_item.display()).as_str());
                     failed += 1;
                     continue;
                 }
                 if verbose {
-                    log(LogLevel::Success, format!("Transferred {}", dst_item.display()).as_str());
+                    log(LogLevel::Success, format!("Restored {}", dst_item.display()).as_str());
                 }
             } 
 
@@ -571,7 +571,7 @@ pub fn cmd_transfer_snap(snap_name: String, verbose: bool) {
         }
     };
 
-    log(logger::LogLevel::Info, format!("Transferred {}/{total} item(s)", total-failed).as_str());
+    log(logger::LogLevel::Info, format!("Restored {}/{total} item(s)", total-failed).as_str());
 }
 
 pub fn cmd_delete_snap(snap: String) {
