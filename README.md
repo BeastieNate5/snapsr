@@ -55,7 +55,7 @@ This will restore all files saved in the desktop_env Snap back to their original
 To see all available commands use `-h`
 
 ## Configuration
-The configuration file is located at `$HOME/.config/snapsr/config.toml`
+The configuration file is located at `$HOME/.config/snapsr/config.toml`. If you do not see it please run `snapsr --setup`
 
 ```toml
 [hooks]
