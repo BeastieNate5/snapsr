@@ -42,7 +42,11 @@ struct Arg {
     clean: bool,
 
     #[arg(long, help="Rename a snap, ex. 'old_name:new_name'", value_parser = parse_rename_args)]
-    rename: Option<(String, String)>
+    rename: Option<(String, String)>,
+
+    #[arg(long, help="Setups environment for Snapsr")]
+    setup: bool
+
 }
 
 fn parse_rename_args(s: &str) -> Result<(String, String), String> {
@@ -122,5 +126,9 @@ fn main() {
     else if cli.args.clean {
         setup_env();
         snaps::cmd_clean_snaps();
+    }
+    else if cli.args.setup {
+        setup_env();
+        logger::log(logger::LogLevel::Success, "Setup env");
     }
 }
