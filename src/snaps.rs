@@ -1,49 +1,48 @@
 use std::collections::BTreeMap;
 use std::collections::HashMap;
+use std::error::Error;
 use std::ffi::OsStr;
 use std::fs;
-use std::io::Write;
-use std::process;
-use std::path;
 use std::io;
+use std::io::Write;
+use std::path;
 use std::path::Component;
 use std::path::{Path, PathBuf};
-use std::error::Error;
+use std::process;
 use std::process::Command;
 use std::process::Stdio;
 
+use chrono::prelude::*;
 use glob::glob;
 use serde::Deserialize;
 use serde::Serialize;
-use chrono::prelude::*;
-
 
 use crate::logger;
-use crate::logger::log;
 use crate::logger::LogLevel;
+use crate::logger::log;
 
 enum HookStatus {
     Success,
     Error,
-    Nothing
+    Nothing,
 }
 
 enum HookType {
     Pre,
-    Post
+    Post,
 }
 
 struct DisplayTable {
     headers: Vec<String>,
     rows: Vec<Vec<String>>,
-    widths: Vec<usize>
+    widths: Vec<usize>,
 }
 
 #[derive(Deserialize, Debug)]
 struct SnapConfig {
     #[serde(default)]
     modules: HashMap<String, ModuleConfig>,
-    hooks: Option<Hooks>
+    hooks: Option<Hooks>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -56,7 +55,7 @@ struct ModuleConfig {
 #[derive(Serialize, Deserialize, Debug)]
 struct Hooks {
     pre_load: Option<String>,
-    post_load: Option<String>
+    post_load: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -64,21 +63,21 @@ struct SnapMetaData {
     timestamp: DateTime<Local>,
     size: u64,
     items: HashMap<PathBuf, PathBuf>,
-    hooks: Option<Hooks>
+    hooks: Option<Hooks>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 struct SnapLog {
     #[serde(default)]
-    snaps: HashMap<String, PathBuf>
+    snaps: HashMap<String, PathBuf>,
 }
 
 impl DisplayTable {
-    fn from(headers: Vec<String>, rows: Vec<Vec<String>>, widths: Vec::<usize>) -> Self {
+    fn from(headers: Vec<String>, rows: Vec<Vec<String>>, widths: Vec<usize>) -> Self {
         Self {
             headers,
             rows,
-            widths
+            widths,
         }
     }
 
@@ -90,8 +89,9 @@ impl DisplayTable {
                 .collect::<Vec<String>>()
                 .join(" | ")
         };
-        
-        let sep : String = self.widths
+
+        let sep: String = self
+            .widths
             .iter()
             .map(|width| "-".repeat(*width))
             .collect::<Vec<String>>()
@@ -104,7 +104,6 @@ impl DisplayTable {
             println!("{}", format_row(&row))
         }
     }
-
 }
 
 impl SnapConfig {
@@ -114,41 +113,46 @@ impl SnapConfig {
                 let txt = Self::parse_for_template(txt);
                 match toml::from_str(&txt) {
                     Ok(config) => Some(config),
-                    Err(_) => None
+                    Err(_) => None,
                 }
             }
 
-            Err(_) => None
+            Err(_) => None,
         }
     }
 
     fn parse_for_template(txt: String) -> String {
         txt.lines()
-           .map(|line| {
+            .map(|line| {
                 let line = line.trim();
-                
+
                 if line.starts_with("template ") {
                     let mut line_splitted = line.split_whitespace();
                     let template_file_opt = line_splitted.nth(1);
-                    
+
                     if let Some(template_file) = template_file_opt {
-                        let template_file_path = PathBuf::from(get_snap_config_dir()).join("templates").join(template_file);
+                        let template_file_path = PathBuf::from(get_snap_config_dir())
+                            .join("templates")
+                            .join(template_file);
 
                         match fs::read_to_string(&template_file_path) {
-                            Ok(template_txt) => {
-                                template_txt
-                            },
+                            Ok(template_txt) => template_txt,
                             Err(err) => {
-                                log(logger::LogLevel::Error, format!("Failed to read template {} ({err})", template_file_path.display()).as_str());
+                                log(
+                                    logger::LogLevel::Error,
+                                    format!(
+                                        "Failed to read template {} ({err})",
+                                        template_file_path.display()
+                                    )
+                                    .as_str(),
+                                );
                                 "".to_string()
                             }
                         }
-                    }
-                    else {
+                    } else {
                         "".to_string()
                     }
-                }
-                else {
+                } else {
                     line.to_string()
                 }
             })
@@ -169,7 +173,7 @@ impl ModuleConfig {
                         if meta.is_file() {
                             items.push(path);
                         }
-                    },
+                    }
                     Err(_) => {
                         continue;
                     }
@@ -180,15 +184,14 @@ impl ModuleConfig {
     }
 }
 
-
 impl SnapMetaData {
     fn new(items: HashMap<PathBuf, PathBuf>, hooks: Option<Hooks>, size: u64) -> Self {
         return Self {
             timestamp: chrono::Local::now(),
             size,
             items,
-            hooks
-        } 
+            hooks,
+        };
     }
 
     fn from(path: &PathBuf) -> Option<Self> {
@@ -197,7 +200,7 @@ impl SnapMetaData {
         Some(data)
     }
 
-    fn save(&self, path: &PathBuf) -> Result<(), Box<dyn Error>>{
+    fn save(&self, path: &PathBuf) -> Result<(), Box<dyn Error>> {
         let json_data = serde_json::to_string(self)?;
         fs::write(path, json_data)?;
         Ok(())
@@ -205,14 +208,13 @@ impl SnapMetaData {
 
     fn run_hook(&self, hook_type: HookType) -> HookStatus {
         if let Some(ref hooks) = self.hooks {
-
             let selected_hook = match hook_type {
                 HookType::Pre => &hooks.pre_load,
-                HookType::Post => &hooks.post_load
+                HookType::Post => &hooks.post_load,
             };
 
             if let Some(post_hook) = selected_hook {
-                let mut command_splitted = post_hook.split_whitespace(); 
+                let mut command_splitted = post_hook.split_whitespace();
                 let program = command_splitted.next();
                 let _args: Vec<&str> = command_splitted.collect();
 
@@ -224,21 +226,17 @@ impl SnapMetaData {
                         .spawn();
 
                     if let Ok(ref mut child) = child {
-
                         let status = child.wait();
-                        
-                        if let Ok(status) = status {
 
+                        if let Ok(status) = status {
                             if status.success() {
-                                return HookStatus::Success
-                            }
-                            else {
-                                return HookStatus::Error
+                                return HookStatus::Success;
+                            } else {
+                                return HookStatus::Error;
                             }
                         }
-                    }
-                    else {
-                        return HookStatus::Error
+                    } else {
+                        return HookStatus::Error;
                     }
                 }
             }
@@ -248,27 +246,23 @@ impl SnapMetaData {
 
     fn hook_exist(&self, hook_type: HookType) -> bool {
         match self.hooks {
-            Some(ref hooks) => {
-                match hook_type {
-                    HookType::Pre => {
-                        if let Some(_) = hooks.pre_load {
-                            true
-                        }
-                        else {
-                            false
-                        }
-                    },
-                    HookType::Post => {
-                        if let Some(_) = hooks.post_load {
-                            true
-                        }
-                        else {
-                            false
-                        }
+            Some(ref hooks) => match hook_type {
+                HookType::Pre => {
+                    if let Some(_) = hooks.pre_load {
+                        true
+                    } else {
+                        false
+                    }
+                }
+                HookType::Post => {
+                    if let Some(_) = hooks.post_load {
+                        true
+                    } else {
+                        false
                     }
                 }
             },
-            None => false
+            None => false,
         }
     }
 }
@@ -280,12 +274,10 @@ impl SnapLog {
         if let Ok(file_txt) = fs::read_to_string(snap_config_path) {
             if let Ok(log) = serde_json::from_str(&file_txt) {
                 log
-            }
-            else {
+            } else {
                 None
             }
-        }
-        else {
+        } else {
             None
         }
     }
@@ -294,15 +286,11 @@ impl SnapLog {
         let snap_config_dir = get_snap_config_dir();
         let snap_config_path = PathBuf::from(snap_config_dir).join("snaplog.json");
         match serde_json::to_string(self) {
-            Ok(json_txt) => {
-                match fs::write(snap_config_path, json_txt) {
-                    Ok(_) => Ok(()),
-                    Err(_) => Err(())
-                }
+            Ok(json_txt) => match fs::write(snap_config_path, json_txt) {
+                Ok(_) => Ok(()),
+                Err(_) => Err(()),
             },
-            Err(_) => {
-                Err(())
-            }
+            Err(_) => Err(()),
         }
     }
 
@@ -311,11 +299,10 @@ impl SnapLog {
     }
 
     fn get_snaps_sorted(&self) -> BTreeMap<String, PathBuf> {
-        self.snaps.iter()
-            .map(|(k, v)| {
-            (k.clone(), v.clone())
-        })
-        .collect()
+        self.snaps
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
     }
 }
 
@@ -323,8 +310,8 @@ impl Hooks {
     fn new(pre_hook: Option<String>, post_hook: Option<String>) -> Self {
         return Self {
             pre_load: pre_hook,
-            post_load: post_hook
-        }
+            post_load: post_hook,
+        };
     }
 }
 
@@ -344,21 +331,19 @@ fn replace_component_in_path<P: AsRef<Path>>(path: P, name: &str, level: usize) 
     let path = path.as_ref();
     let components: Vec<_> = path.components().collect();
 
-    if components.len() < level{
-        return None
+    if components.len() < level {
+        return None;
     }
 
     let index_to_replace = components.len() - level;
 
-    let new_compoents = components.iter()
-        .enumerate()
-        .map(|(i, component)| {
-            if i == index_to_replace {
-                Component::Normal(OsStr::new(name)) }
-            else {
-                *component
-            }
-        });
+    let new_compoents = components.iter().enumerate().map(|(i, component)| {
+        if i == index_to_replace {
+            Component::Normal(OsStr::new(name))
+        } else {
+            *component
+        }
+    });
 
     let new_path = new_compoents.fold(PathBuf::new(), |mut new_path, cur_comp| {
         new_path.push(cur_comp);
@@ -368,12 +353,22 @@ fn replace_component_in_path<P: AsRef<Path>>(path: P, name: &str, level: usize) 
     Some(new_path)
 }
 
-pub fn cmd_snap(snap_name: String, snap_config_path: Option<PathBuf>, pre_hook: Option<String>, post_hook: Option<String>, verbose: bool) {
+pub fn cmd_snap(
+    snap_name: String,
+    snap_config_path: Option<PathBuf>,
+    pre_hook: Option<String>,
+    post_hook: Option<String>,
+    verbose: bool,
+) {
     match SnapLog::fetch() {
         Some(snaplog) => {
             if snaplog.exist(snap_name.as_str()) {
                 let mut input = String::new();
-                log(logger::LogLevel::Info, format!("Snap {snap_name} already exist. Do you wish to overwrite (y/N)? ").as_str());
+                log(
+                    logger::LogLevel::Info,
+                    format!("Snap {snap_name} already exist. Do you wish to overwrite (y/N)? ")
+                        .as_str(),
+                );
                 io::stdout().flush().unwrap();
                 io::stdin().read_line(&mut input).unwrap();
                 let input = input.trim();
@@ -386,12 +381,15 @@ pub fn cmd_snap(snap_name: String, snap_config_path: Option<PathBuf>, pre_hook: 
 
                 if let Some(log_entry) = snaplog.snaps.get(&snap_name) {
                     fs::remove_dir_all(log_entry).unwrap_or_else(|err| {
-                        log(logger::LogLevel::Error, format!("Failed to clear existing snap ({err})").as_str());
+                        log(
+                            logger::LogLevel::Error,
+                            format!("Failed to clear existing snap ({err})").as_str(),
+                        );
                         process::exit(1);
                     });
                 }
             }
-        },
+        }
         None => {
             log(logger::LogLevel::Error, "Failed to read snap log");
             return;
@@ -402,7 +400,7 @@ pub fn cmd_snap(snap_name: String, snap_config_path: Option<PathBuf>, pre_hook: 
         Some(path) => {
             let path = path::PathBuf::from(&path);
             SnapConfig::from(path)
-        },
+        }
 
         None => {
             let path = get_snap_config_dir();
@@ -415,20 +413,19 @@ pub fn cmd_snap(snap_name: String, snap_config_path: Option<PathBuf>, pre_hook: 
         Some(config) => config,
         None => {
             log(logger::LogLevel::Error, "Failed to read snap config");
-            return
+            return;
         }
     };
-    
 
     let snap_dir = get_snaps_dir();
     let snap_dir = path::Path::new(&snap_dir).join(&snap_name);
 
     if let Err(_) = fs::create_dir_all(&snap_dir) {
         log(logger::LogLevel::Error, "Failed to create snap directory");
-        return
+        return;
     }
 
-    let mut items_src_to_dst : HashMap<PathBuf, PathBuf> = HashMap::new();
+    let mut items_src_to_dst: HashMap<PathBuf, PathBuf> = HashMap::new();
     let mut size_of_snap = 0;
     let mut total_items = 0;
     let mut snapped_items_amount = 0;
@@ -437,17 +434,22 @@ pub fn cmd_snap(snap_name: String, snap_config_path: Option<PathBuf>, pre_hook: 
         let module_dir = snap_dir.join(&module_name);
 
         if let Err(_) = fs::create_dir_all(&module_dir) {
-            log(logger::LogLevel::Error, format!("Failed to create module directory for {module_name}").as_str());
+            log(
+                logger::LogLevel::Error,
+                format!("Failed to create module directory for {module_name}").as_str(),
+            );
             continue;
         }
 
         let items = module.get_item_paths();
         total_items += items.len();
 
-        log(logger::LogLevel::Info, format!("{module_name}: {} items", items.len()).as_str());
+        log(
+            logger::LogLevel::Info,
+            format!("{module_name}: {} items", items.len()).as_str(),
+        );
 
         for item in items {
-
             if let (Some(parent), Some(file_child)) = (item.parent(), item.file_name()) {
                 if let Some(grandparent) = parent.file_name() {
                     let grandparent_key = grandparent.to_string_lossy();
@@ -458,47 +460,62 @@ pub fn cmd_snap(snap_name: String, snap_config_path: Option<PathBuf>, pre_hook: 
 
                     if let Ok(size) = fs::copy(&item, &saved_item_path) {
                         if verbose {
-                            log(logger::LogLevel::Success, format!("Snapped {} ({module_name})", item.display()).as_str());
+                            log(
+                                logger::LogLevel::Success,
+                                format!("Snapped {} ({module_name})", item.display()).as_str(),
+                            );
                         }
                         items_src_to_dst.insert(item, saved_item_path);
                         size_of_snap += size;
                         snapped_items_amount += 1;
+                    } else {
+                        log(
+                            logger::LogLevel::Error,
+                            format!(
+                                "Failed to snap {}, skipping ({module_name})",
+                                item.display()
+                            )
+                            .as_str(),
+                        );
                     }
-                    else {
-                        log(logger::LogLevel::Error, format!("Failed to snap {}, skipping ({module_name})", item.display()).as_str());
-                    }
-                } 
+                }
             }
         }
     }
 
-
-    let hooks : Option<Hooks>;
+    let hooks: Option<Hooks>;
     if pre_hook.is_some() || post_hook.is_some() {
         hooks = Some(Hooks::new(pre_hook, post_hook))
-    }
-    else {
+    } else {
         hooks = snap.hooks;
     }
-
 
     let snap_meta_data = SnapMetaData::new(items_src_to_dst, hooks, size_of_snap);
     if let Ok(_) = snap_meta_data.save(&snap_dir.join("snap.json")) {
         if let Some(mut snaplog) = SnapLog::fetch() {
             snaplog.snaps.insert(snap_name, snap_dir);
             if let Ok(_) = snaplog.save() {
-                log(logger::LogLevel::Success, format!("Saved Snap {snapped_items_amount}/{total_items} item(s)").as_str())
+                log(
+                    logger::LogLevel::Success,
+                    format!("Saved Snap {snapped_items_amount}/{total_items} item(s)").as_str(),
+                )
+            } else {
+                log(
+                    logger::LogLevel::Error,
+                    "Failed to save snap log, this snap will be unusable",
+                );
             }
-            else {
-                log(logger::LogLevel::Error, "Failed to save snap log, this snap will be unusable");
-            }
+        } else {
+            log(
+                logger::LogLevel::Error,
+                "Failed to save snap log, this snap will be unusable",
+            );
         }
-        else {
-            log(logger::LogLevel::Error, "Failed to save snap log, this snap will be unusable");
-        }
-    }
-    else {
-        log(logger::LogLevel::Error, "Failed to save snap log, this snap will be unusable");
+    } else {
+        log(
+            logger::LogLevel::Error,
+            "Failed to save snap log, this snap will be unusable",
+        );
     }
 }
 
@@ -506,13 +523,16 @@ pub fn cmd_restore_snap(snap_name: String, verbose: bool) {
     match SnapLog::fetch() {
         Some(snaplog) => {
             if !snaplog.exist(snap_name.as_str()) {
-                log(logger::LogLevel::Error, format!("Snap {snap_name} does not exist").as_str());
+                log(
+                    logger::LogLevel::Error,
+                    format!("Snap {snap_name} does not exist").as_str(),
+                );
                 return;
             }
-        },
+        }
         None => {
             log(logger::LogLevel::Error, "Failed to read snap log");
-            return
+            return;
         }
     }
 
@@ -524,31 +544,38 @@ pub fn cmd_restore_snap(snap_name: String, verbose: bool) {
 
     let mut failed = 0;
     let mut total = 0;
-    
+
     match snap {
         Some(ref snap_meta) => {
-
             if snap_meta.hook_exist(HookType::Pre) {
                 log(logger::LogLevel::Info, "Executing pre-hook");
                 let status = snap_meta.run_hook(HookType::Pre);
                 match status {
-                    HookStatus::Success => log(logger::LogLevel::Success, "Pre-hook executed successfully"),
+                    HookStatus::Success => {
+                        log(logger::LogLevel::Success, "Pre-hook executed successfully")
+                    }
                     HookStatus::Error => log(logger::LogLevel::Error, "Pre-hook failed to execute"),
-                    HookStatus::Nothing => log(logger::LogLevel::Warn, "Pre-hook is empty")
+                    HookStatus::Nothing => log(logger::LogLevel::Warn, "Pre-hook is empty"),
                 }
             }
 
             for (src_item, dst_item) in &snap_meta.items {
                 total += 1;
                 if let Err(_) = fs::copy(&dst_item, &src_item) {
-                    log(logger::LogLevel::Error, format!("Failed to restore item {}", dst_item.display()).as_str());
+                    log(
+                        logger::LogLevel::Error,
+                        format!("Failed to restore item {}", dst_item.display()).as_str(),
+                    );
                     failed += 1;
                     continue;
                 }
                 if verbose {
-                    log(LogLevel::Success, format!("Restored {}", dst_item.display()).as_str());
+                    log(
+                        LogLevel::Success,
+                        format!("Restored {}", dst_item.display()).as_str(),
+                    );
                 }
-            } 
+            }
 
             if snap_meta.hook_exist(HookType::Post) {
                 if verbose {
@@ -557,21 +584,30 @@ pub fn cmd_restore_snap(snap_name: String, verbose: bool) {
                 let status = snap_meta.run_hook(HookType::Post);
 
                 match status {
-                    HookStatus::Success => log(logger::LogLevel::Success, "Post-hook executed successfully"),
-                    HookStatus::Error => log(logger::LogLevel::Error, "Post-hook failed to execute"),
-                    HookStatus::Nothing => log(logger::LogLevel::Warn, "Post-hook is empty")
-
+                    HookStatus::Success => {
+                        log(logger::LogLevel::Success, "Post-hook executed successfully")
+                    }
+                    HookStatus::Error => {
+                        log(logger::LogLevel::Error, "Post-hook failed to execute")
+                    }
+                    HookStatus::Nothing => log(logger::LogLevel::Warn, "Post-hook is empty"),
                 }
             }
-        },
+        }
 
         None => {
-            log(logger::LogLevel::Error, format!("Failed to read {snap_name}'s metadata").as_str());
-            return
+            log(
+                logger::LogLevel::Error,
+                format!("Failed to read {snap_name}'s metadata").as_str(),
+            );
+            return;
         }
     };
 
-    log(logger::LogLevel::Info, format!("Restored {}/{total} item(s)", total-failed).as_str());
+    log(
+        logger::LogLevel::Info,
+        format!("Restored {}/{total} item(s)", total - failed).as_str(),
+    );
 }
 
 pub fn cmd_delete_snap(snap: String) {
@@ -581,26 +617,41 @@ pub fn cmd_delete_snap(snap: String) {
     });
 
     if !snaplog.exist(&snap) {
-        log(logger::LogLevel::Error, format!("Snap {snap} does not exist").as_str());
+        log(
+            logger::LogLevel::Error,
+            format!("Snap {snap} does not exist").as_str(),
+        );
         process::exit(1);
     }
 
     let snap_dir = snaplog.snaps.remove(&snap).unwrap_or_else(|| {
-        log(logger::LogLevel::Error, format!("Snap {snap} does not exist").as_str());
+        log(
+            logger::LogLevel::Error,
+            format!("Snap {snap} does not exist").as_str(),
+        );
         process::exit(1);
     });
 
     fs::remove_dir_all(snap_dir).unwrap_or_else(|err| {
-        log(logger::LogLevel::Error, format!("Failed to remove snap directory ({err})").as_str());
+        log(
+            logger::LogLevel::Error,
+            format!("Failed to remove snap directory ({err})").as_str(),
+        );
         process::exit(1);
     });
 
     snaplog.save().unwrap_or_else(|_| {
-        log(logger::LogLevel::Error, "Failed to update snap log, please try again");
+        log(
+            logger::LogLevel::Error,
+            "Failed to update snap log, please try again",
+        );
         process::exit(1);
     });
 
-    log(logger::LogLevel::Success, format!("Deleted {snap}").as_str())
+    log(
+        logger::LogLevel::Success,
+        format!("Deleted {snap}").as_str(),
+    )
 }
 
 pub fn cmd_rename_snap(old_name: &str, new_name: &str) {
@@ -609,7 +660,6 @@ pub fn cmd_rename_snap(old_name: &str, new_name: &str) {
         process::exit(1);
     });
 
-    
     if !snaplog.snaps.contains_key(old_name) {
         eprintln!("[\x1b[1;91m-\x1b[0m] Snap {old_name} does not exist");
         process::exit(1);
@@ -635,10 +685,14 @@ pub fn cmd_rename_snap(old_name: &str, new_name: &str) {
         process::exit(1);
     });
 
-    snap_meta.items = snap_meta.items
+    snap_meta.items = snap_meta
+        .items
         .into_iter()
         .map(|item| {
-            (item.0, replace_component_in_path(item.1, new_name, 3).unwrap())
+            (
+                item.0,
+                replace_component_in_path(item.1, new_name, 3).unwrap(),
+            )
         })
         .collect();
 
@@ -646,7 +700,7 @@ pub fn cmd_rename_snap(old_name: &str, new_name: &str) {
         eprintln!("[\x1b[1;91m-\x1b[0m] Failed to save snap meta data. DO NOT RUN -c, --clean\nRun the following command to restore snap 'mv {} {}'", new_snap_path.display(), snap_path.display());
         process::exit(1);
     });
-    
+
     snaplog.snaps.remove(old_name);
     snaplog.snaps.insert(new_name.into(), new_snap_path);
 
@@ -655,7 +709,6 @@ pub fn cmd_rename_snap(old_name: &str, new_name: &str) {
         process::exit(1);
     });
 
-    
     println!("[\x1b[1;92m+\x1b[0m] Renamed snap to {new_name}");
 }
 
@@ -666,8 +719,13 @@ pub fn cmd_list_snaps() {
             process::exit(1);
         })
         .get_snaps_sorted();
-    
-    let headers = vec![String::from("Name"), String::from("Items"), String::from("Size"), String::from("Last modified"), ];
+
+    let headers = vec![
+        String::from("Name"),
+        String::from("Items"),
+        String::from("Size"),
+        String::from("Last modified"),
+    ];
     let mut rows = Vec::new();
     let mut max_width_name = 4;
     let mut max_width_size = 5;
@@ -694,11 +752,20 @@ pub fn cmd_list_snaps() {
                 max_width_items = items_len;
             }
 
-            rows.push(vec![name.into(), snap_items_amount, snap_size, snap_meta.timestamp.to_string()]);
+            rows.push(vec![
+                name.into(),
+                snap_items_amount,
+                snap_size,
+                snap_meta.timestamp.to_string(),
+            ]);
         }
     }
 
-    let table = DisplayTable::from(headers, rows, vec![max_width_name,max_width_items,max_width_size,36]);
+    let table = DisplayTable::from(
+        headers,
+        rows,
+        vec![max_width_name, max_width_items, max_width_size, 36],
+    );
     table.display();
 }
 
@@ -712,7 +779,10 @@ pub fn cmd_clean_snaps() {
     });
 
     let dir_entries = fs::read_dir(snaps_dir).unwrap_or_else(|err| {
-        log(logger::LogLevel::Error, format!("Failed to read snaps directory ({err})").as_str());
+        log(
+            logger::LogLevel::Error,
+            format!("Failed to read snaps directory ({err})").as_str(),
+        );
         process::exit(1);
     });
 
@@ -729,25 +799,36 @@ pub fn cmd_clean_snaps() {
 
                         if !snaplog.snaps.contains_key(&snap_name) {
                             if let Err(err) = fs::remove_dir_all(&path) {
-                                log(logger::LogLevel::Error, format!("Failed to delete {snap_name}'s directory ({err})").as_str());
-                            }
-                            else {
-                                log(logger::LogLevel::Success, format!("Cleaned out {snap_name}").as_str());
+                                log(
+                                    logger::LogLevel::Error,
+                                    format!("Failed to delete {snap_name}'s directory ({err})")
+                                        .as_str(),
+                                );
+                            } else {
+                                log(
+                                    logger::LogLevel::Success,
+                                    format!("Cleaned out {snap_name}").as_str(),
+                                );
                                 amount += 1;
                             }
                         }
                     }
                 }
-            },
-            Err(err) => log(logger::LogLevel::Error, format!("Failed to read directory entry ({err})").as_str()),
+            }
+            Err(err) => log(
+                logger::LogLevel::Error,
+                format!("Failed to read directory entry ({err})").as_str(),
+            ),
         }
     }
 
     if amount == 0 {
         log(logger::LogLevel::Info, "Nothing to clean");
-    }
-    else {
-        log(logger::LogLevel::Success, format!("Cleaned {amount} snaps").as_str());
+    } else {
+        log(
+            logger::LogLevel::Success,
+            format!("Cleaned {amount} snaps").as_str(),
+        );
     }
 }
 
@@ -755,10 +836,15 @@ pub fn cmd_clean_snaps() {
 mod test {
     use super::*;
 
-
     #[test]
     fn test_repalce_component() {
-        assert_eq!(replace_component_in_path(PathBuf::from("/home/bob/.config/hypr"), "waybar", 1), Some(PathBuf::from("/home/bob/.config/waybar")));
-        assert_eq!(replace_component_in_path(PathBuf::from("/home/bob/.config/hypr/scripts"), "waybar", 2), Some(PathBuf::from("/home/bob/.config/waybar/scripts")));
+        assert_eq!(
+            replace_component_in_path(PathBuf::from("/home/bob/.config/hypr"), "waybar", 1),
+            Some(PathBuf::from("/home/bob/.config/waybar"))
+        );
+        assert_eq!(
+            replace_component_in_path(PathBuf::from("/home/bob/.config/hypr/scripts"), "waybar", 2),
+            Some(PathBuf::from("/home/bob/.config/waybar/scripts"))
+        );
     }
 }
