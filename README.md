@@ -69,7 +69,7 @@ description = "Hyprland configuration files"
 template waybar.toml
 ```
 
-The configuration is in toml format. First you add in your modules. Here we put a module called hypr.In the `include` variable you specifiy what files you want to be included in the module. Optionally you can add in a `description`
+The configuration is in toml format. First you add in your modules. Here we put a module called hypr. In the `include` variable you specifiy what files you want to be included in the module. Optionally you can add in a `description`
 
 Snapsr also supports templates. Templating allows you to write your configuration in different files and include them into the main configuration file. You can create your templates at `$HOME/.config/snapsr/templates`. Here we have a template file called `waybar.toml` that we included in our configuration file. It contains the following
 
