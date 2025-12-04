@@ -1,11 +1,11 @@
 {
-    description = "A very basic flake";
+    description = "A very basic flake for Snapsr";
 
     inputs = {
         nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
     };
     
-    outputs = { nixpkgs }: 
+    outputs = { self, nixpkgs }: 
     let
         pkgs = nixpkgs.legacyPackages.x86_64-linux;
     in
